@@ -1,0 +1,2 @@
+Make it robust so when error is received from API it tries later.
+Empty team names can sometimes be received. Double-check this.
