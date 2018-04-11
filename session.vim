@@ -50,13 +50,19 @@ if expand('%') == '' && !&modified && line('$') <= 1 && getline(1) == ''
   let s:wipebuf = bufnr('%')
 endif
 set shortmess=aoO
-badd +213 down.py
-badd +1 .packages
-badd +6 b365dj/b365dapp/models.py
+badd +194 b365dj/b365dapp/down.py
+badd +11 b365dj/b365dapp/management/commands/rundown.py
+badd +132 b365dj/b365dj/settings.py
+badd +3 b365dj/b365dapp/dao.py
+badd +16 b365dj/b365dapp/models.py
+badd +17 b365dj/b365dapp/util.py
+badd +27 b365dj/b365dapp/admin.py
+badd +3 ~/dob365d
+badd +0 TODO.txt
 argglobal
 silent! argdel *
-argadd down.py
-edit down.py
+argadd b365dj/b365dapp/down.py
+edit b365dj/b365dapp/down.py
 set splitbelow splitright
 wincmd _ | wincmd |
 split
@@ -83,7 +89,7 @@ setlocal nocindent
 setlocal cinkeys=0{,0},0),:,0#,!^F,o,O,e
 setlocal cinoptions=
 setlocal cinwords=if,else,while,do,for,switch
-setlocal colorcolumn=
+setlocal colorcolumn=80
 setlocal comments=s1:/*,mb:*,ex:*/,://,b:#,:%,:XCOMM,n:>,fb:-
 setlocal commentstring=/*%s*/
 setlocal complete=.,w,b,u,t,i
@@ -176,16 +182,15 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 213 - ((17 * winheight(0) + 18) / 36)
+let s:l = 112 - ((17 * winheight(0) + 18) / 36)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-213
-normal! 0
-lcd ~/dev/b365d/src
+112
+normal! 045|
 wincmd w
 argglobal
-edit ~/dev/b365d/src/b365dj/b365dapp/models.py
+edit TODO.txt
 setlocal keymap=
 setlocal noarabic
 setlocal noautoindent
@@ -200,7 +205,8 @@ setlocal nocindent
 setlocal cinkeys=0{,0},0),:,0#,!^F,o,O,e
 setlocal cinoptions=
 setlocal cinwords=if,else,while,do,for,switch
-setlocal colorcolumn=
+set colorcolumn=80
+setlocal colorcolumn=80
 setlocal comments=s1:/*,mb:*,ex:*/,://,b:#,:%,:XCOMM,n:>,fb:-
 setlocal commentstring=/*%s*/
 setlocal complete=.,w,b,u,t,i
@@ -218,8 +224,8 @@ setlocal nodiff
 setlocal equalprg=
 setlocal errorformat=
 setlocal expandtab
-if &filetype != 'python'
-setlocal filetype=python
+if &filetype != 'text'
+setlocal filetype=text
 endif
 setlocal fixendofline
 setlocal foldcolumn=0
@@ -278,8 +284,8 @@ setlocal statusline=
 setlocal suffixesadd=
 setlocal noswapfile
 setlocal synmaxcol=3000
-if &syntax != 'python'
-setlocal syntax=python
+if &syntax != 'text'
+setlocal syntax=text
 endif
 setlocal tabstop=4
 setlocal tagcase=
@@ -293,14 +299,14 @@ setlocal nowinfixwidth
 setlocal wrap
 setlocal wrapmargin=0
 silent! normal! zE
-let s:l = 6 - ((2 * winheight(0) + 18) / 36)
+let s:l = 2 - ((1 * winheight(0) + 18) / 36)
 if s:l < 1 | let s:l = 1 | endif
 exe s:l
 normal! zt
-6
-normal! 0
-lcd ~/dev/b365d/src
+2
+normal! 030|
 wincmd w
+2wincmd w
 exe '1resize ' . ((&lines * 36 + 37) / 75)
 exe '2resize ' . ((&lines * 36 + 37) / 75)
 tabnext 1

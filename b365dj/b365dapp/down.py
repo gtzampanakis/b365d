@@ -29,6 +29,7 @@
 # 21) Shots on target for away
 # 22) Shots off target for home
 # 23) Shots off target for away
+
 # 24) Corners home
 # 25) Corners away
 # 26) Yellow cards home
@@ -94,6 +95,7 @@ ych = 'yellow_cards_home'
 yca = 'yellow_cards_away'
 rch = 'red_cards_home'
 rca = 'red_cards_away'
+
 game_id = 'game_id'
 fah = 'first_asian_handicap'
 fahh = 'first_asian_handicap_home_odds'
@@ -109,16 +111,35 @@ htlo = 'halftime_total_line_over'
 htlu = 'halftime_total_line_under'
 
 
+ON_TARGET = "On Target"
+OFF_TARGET = "Off Target"
+ATTACKS = "Attacks"
+DANGEROUS_ATTACKS = "Dangerous Attacks"
+POSSESSION = "Possession %"
+
+STATS_DESCS = [
+    ON_TARGET,
+    OFF_TARGET,
+    ATTACKS,
+    DANGEROUS_ATTACKS,
+    POSSESSION,
+]
+
 BETS_API_TOKEN = os.environ['BETS_API_TOKEN']
 
 EVENT_LIST_URL = (
 	'https://api.betsapi.com/v1/bet365/inplay?token=%s' % (BETS_API_TOKEN))
 
 EVENT_INFO_URL = 'https://api.betsapi.com/v1/bet365/event?token=%s&FI=%s'
+EVENT_STATS_URL = 'https://api.betsapi.com/v1/bet365/event?token=%s&FI=%s&stats=1'
 
 
 def get_event_info_url(fi):
     return EVENT_INFO_URL % (BETS_API_TOKEN, fi)
+
+
+def get_event_stats_url(fi):
+    return EVENT_STATS_URL % (BETS_API_TOKEN, fi)
 
 
 class EventInfo:
@@ -137,7 +158,7 @@ class EventInfo:
                 match = False
                 if obj.get('type') == type_prior:
                     if first_index == -1:
-                        if first_condition_fn(obj):
+                        if not first_condition_fn or first_condition_fn(obj):
                             match = True
                     else:
                         match = True
@@ -186,11 +207,19 @@ class Updater:
         j = response.json()
         assert j['success'] == 1
         return EventInfo(j['results'][0])
-    
+
+    def get_event_stats(self, fi):
+        url = get_event_stats_url(fi)
+        response = self.throttler.call(self.session.get, url)
+        assert response.status_code == 200
+        j = response.json()
+        assert j['success'] == 1
+        return EventInfo(j['results'][0])
+
     def handle_event_list(self):
         pass
 
-    def handle_event_info(self, event_info):
+    def handle_event_info(self, event_info, event_stats):
         d = {from_api: {}, internal: {}}
         di = d[internal]
         da = d[from_api]
@@ -214,7 +243,9 @@ class Updater:
         da[league] = event_info.get('EV', 'CT')
 
         for k, i in zip([home, away], [0, 2]):
-            da[k] = util.safe_apply(
+            # Using apply instead of safe_apply because these fields are
+            # mandatory.
+            da[k] = util.apply(
                 event_info.get('MA->PA', 'NA',
                                lambda o: o['NA'] == 'Fulltime Result'),
                 lambda l: l[i])
@@ -222,7 +253,8 @@ class Updater:
         da[ah] = util.safe_apply(
             event_info.get('MA->PA', 'HA',
                            lambda o: o['NA'].startswith('Asian Handicap')),
-            lambda l: l[0])
+            lambda l: l[0],
+            util.frac_to_dec)
 
         for k,i in zip([ahho, ahao], [0, 1]):
             da[k] = util.safe_apply(
@@ -234,7 +266,8 @@ class Updater:
         da[tl] = util.safe_apply(
             event_info.get('MA->PA', 'HA',
                            lambda o: o['NA'] == 'Match Goals'),
-            lambda l: l[0])
+            lambda l: l[0],
+            util.frac_to_dec)
 
         for k,i in zip([tlo, tlu], [0, 1]):
             da[k] = util.safe_apply(
@@ -243,15 +276,89 @@ class Updater:
                 lambda l: l[i],
                 util.frac_to_dec)
 
+        # Start stats.
+        if event_stats is not None:
+            desc_to_field = {}
+            for suffix in xrange(1, 8):
+                field = 'S' + str(suffix)
+                value = event_stats.get('EV', field)
+                if value in STATS_DESCS:
+                    desc_to_field[value] = field
+            
+        if ATTACKS in desc_to_field:
+            for k,i in zip([atth, atta], [0, 1]):
+                da[k] = util.safe_apply(
+                    event_stats.get('EV->TE', desc_to_field[ATTACKS]),
+                    lambda l: l[i],
+                    float)
+
+        if DANGEROUS_ATTACKS in desc_to_field:
+            for k,i in zip([datth, datta], [0, 1]):
+                da[k] = util.safe_apply(
+                    event_stats.get('EV->TE', desc_to_field[DANGEROUS_ATTACKS]),
+                    lambda l: l[i],
+                    float)
+
+        if POSSESSION in desc_to_field:
+            for k,i in zip([ph, pa], [0, 1]):
+                da[k] = util.safe_apply(
+                    event_stats.get('EV->TE', desc_to_field[POSSESSION]),
+                    lambda l: l[i],
+                    float)
+
+        if ON_TARGET in desc_to_field:
+            for k,i in zip([shnh, shna], [0, 1]):
+                da[k] = util.safe_apply(
+                    event_stats.get('EV->TE', desc_to_field[ON_TARGET]),
+                    lambda l: l[i],
+                    float)
+
+        if OFF_TARGET in desc_to_field:
+            for k,i in zip([shoh, shoa], [0, 1]):
+                da[k] = util.safe_apply(
+                    event_stats.get('EV->TE', desc_to_field[OFF_TARGET]),
+                    lambda l: l[i],
+                    float)
+
+        for k,i in zip([ch, ca], [0, 1]):
+            da[k] = util.safe_apply(
+                event_stats.get('SC->SL', 'D1',
+                    lambda o: o['NA'] == 'ICorner'),
+                lambda l: l[i],
+                float)
+
+        for k,i in zip([ych, yca], [0, 1]):
+            da[k] = util.safe_apply(
+                event_stats.get('SC->SL', 'D1',
+                    lambda o: o['NA'] == 'IYellowCard'),
+                lambda l: l[i],
+                float)
+
+        for k,i in zip([rch, rca], [0, 1]):
+            da[k] = util.safe_apply(
+                event_stats.get('SC->SL', 'D1',
+                    lambda o: o['NA'] == 'IRedCard'),
+                lambda l: l[i],
+                float)
+        # End stats.
+
         dao.save_record(d)
 
     def run_cycle(self):
         objs = self.get_event_list()
         for obj in objs:
-            if obj['type'] == 'EV':
-                fi = obj['FI']
-                event_info = self.get_event_info(fi)
-                self.handle_event_info(event_info)
+            try:
+                if obj['type'] == 'EV':
+                    fi = obj['FI']
+                    event_info = self.get_event_info(fi)
+                    try:
+                        event_stats = self.get_event_stats(fi)
+                    except Exception as e:
+                        LOGGER.exception(e)
+                        event_stats = None
+                    self.handle_event_info(event_info, event_stats)
+            except Exception as e:
+                LOGGER.exception(e)
 
     def run(self):
         while True:

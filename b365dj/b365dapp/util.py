@@ -19,5 +19,14 @@ def safe_apply(obj, *fns):
     return obj
 
 
+def apply(obj, *fns):
+    """
+    This is for symmetry with safe_apply.
+    """
+    for fn in fns:
+        obj = fn(obj)
+    return obj
+
+
 def frac_to_dec(frac_str):
     return float(fractions.Fraction(frac_str) + 1)

@@ -31,4 +31,21 @@ class EventState(models.Model):
     total_line_over = models.FloatField(null=True)
     total_line_under = models.FloatField(null=True)
 
+    attacks_home = models.IntegerField(null = True)
+    attacks_away = models.IntegerField(null = True)
+    dangerous_attacks_home = models.IntegerField(null = True)
+    dangerous_attacks_away = models.IntegerField(null = True)
+    possession_home = models.FloatField(null = True)
+    possession_away = models.FloatField(null = True)
+    shots_on_target_home = models.IntegerField(null = True)
+    shots_on_target_away = models.IntegerField(null = True)
+    shots_off_target_home = models.IntegerField(null = True)
+    shots_off_target_away = models.IntegerField(null = True)
+
+    corners_home = models.IntegerField(null = True)
+    corners_away = models.IntegerField(null = True)
+    yellow_cards_home = models.IntegerField(null = True)
+    yellow_cards_away = models.IntegerField(null = True)
+    red_cards_home = models.IntegerField(null = True)
+    red_cards_away = models.IntegerField(null = True)
 
