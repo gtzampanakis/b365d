@@ -367,8 +367,3 @@ class Updater:
             except Exception as e:
                 LOGGER.exception(e)
 
-if __name__ == '__main__':
-    logging.basicConfig(level = logging.DEBUG)
-    updater = Updater(3600)
-    updater.run()
-

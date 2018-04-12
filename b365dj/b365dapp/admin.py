@@ -6,6 +6,7 @@ from b365dapp.models import EventState
 
 class EventStateAdmin(admin.ModelAdmin):
     fields = [
+        'id',
         'event_start',
 
         'home_team',
@@ -23,6 +24,26 @@ class EventStateAdmin(admin.ModelAdmin):
         'total_line',
         'total_line_over',
         'total_line_under',
+
+        'attacks_home',
+        'attacks_away',
+        'dangerous_attacks_home',
+        'dangerous_attacks_away',
+        'possession_home',
+        'possession_away',
+        'shots_on_target_home',
+        'shots_on_target_away',
+        'shots_off_target_home',
+        'shots_off_target_away',
+
+        'corners_home',
+        'corners_away',
+        'yellow_cards_home',
+        'yellow_cards_away',
+        'red_cards_home',
+        'red_cards_away',
+
+        'created_at',
     ]
     list_display = fields
 

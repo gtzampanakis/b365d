@@ -120,19 +120,46 @@ USE_TZ = False
 
 STATIC_URL = '/static/'
 
+LOG_DIR = os.path.join(os.environ['WORK_DIR'], 'log')
+
+if not os.path.exists(LOG_DIR):
+    os.makedirs(LOG_DIR)
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'handlers': {
         'console': {
+            'level': 'DEBUG' if DEBUG else 'INFO',
             'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+        'debug_file': {
+            'level': 'DEBUG',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'formatter': 'verbose',
+            'filename': os.path.join(LOG_DIR, 'debug.log'),
+            'maxBytes': 10 * 1024 * 1024,
+            'backupCount': 10,
+            'encoding': 'utf-8',
         },
     },
     'loggers': {
         '': {
-            'handlers': ['console'],
-            'level': 'DEBUG' if DEBUG else 'INFO',
+            'handlers': ['console', 'debug_file'],
+            'level': 'NOTSET',
             'propagate': True,
+        },
+    },
+    'formatters': {
+        'verbose': {
+            'format': 
+                '%(levelname)s %(asctime)s %(module)s '
+                '%(process)d %(thread)d %(pathname)s:%(lineno)s '
+                '%(message)s'
+        },
+        'simple': {
+            'format': '%(levelname)s %(message)s'
         },
     },
 }

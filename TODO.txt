@@ -1,3 +1,4 @@
 Make it robust so when error is received from API it tries later.
-Empty team names can sometimes be received. Double-check this.
 Write full parsing error information to a special file.
+Only show latest event state in admin.
+Rest of the columns.

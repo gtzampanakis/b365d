@@ -49,3 +49,9 @@ class EventState(models.Model):
     red_cards_home = models.IntegerField(null = True)
     red_cards_away = models.IntegerField(null = True)
 
+    created_at = models.DateTimeField(auto_now_add = True, db_index = True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Event State'
+        verbose_name_plural = 'Event States'

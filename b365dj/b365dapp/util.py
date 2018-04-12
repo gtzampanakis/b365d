@@ -14,7 +14,7 @@ def safe_apply(obj, *fns):
         try:
             obj = fn(obj)
         except Exception as e:
-            LOGGER.exception(e)
+            LOGGER.debug(e)
             return None
     return obj
 
