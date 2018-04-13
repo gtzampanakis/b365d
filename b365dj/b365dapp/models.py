@@ -3,16 +3,9 @@ from __future__ import unicode_literals
 
 from django.db import models
 
-# {'asian_handicap_home_odds': 2.0, 'league': u'
-# Algeria Youth League', 'home_team': u'JSM Bejaia U21', 'away_team': u'MO
-# Bejaia U21', 'current_home_goals': u'0', '
-# asian_handicap_away_odds': 1.8, 'total_line_over': 2.5, 'asian_handicap':
-# u'0', 'event_start': datetime.datetime(20
-# 18, 4, 6, 12, 13, 43), 'total_line_under': 1.5, 'current_away_goals': u'1',
-# 'total_line': u'2.5'}
-
 
 class EventState(models.Model):
+    game_id = models.CharField(max_length=1024, db_index=True)
     event_start = models.DateTimeField(null=True, db_index=True)
 
     home_team = models.CharField(max_length=1024, db_index=True)
@@ -27,9 +20,25 @@ class EventState(models.Model):
     asian_handicap_home_odds = models.FloatField(null=True)
     asian_handicap_away_odds = models.FloatField(null=True)
 
+    halftime_asian_handicap = models.DecimalField(max_digits=5, decimal_places=2, null=True)
+    halftime_asian_handicap_home_odds = models.FloatField(null=True)
+    halftime_asian_handicap_away_odds = models.FloatField(null=True)
+
     total_line = models.DecimalField(max_digits=5, decimal_places=2, null=True)
     total_line_over = models.FloatField(null=True)
     total_line_under = models.FloatField(null=True)
+
+    halftime_total_line = models.DecimalField(max_digits=5, decimal_places=2, null=True)
+    halftime_total_line_over = models.FloatField(null=True)
+    halftime_total_line_under = models.FloatField(null=True)
+
+    first_asian_handicap = models.DecimalField(max_digits=5, decimal_places=2, null=True)
+    first_asian_handicap_home_odds = models.FloatField(null=True)
+    first_asian_handicap_away_odds = models.FloatField(null=True)
+
+    first_total_line = models.DecimalField(max_digits=5, decimal_places=2, null=True)
+    first_total_line_over = models.FloatField(null=True)
+    first_total_line_under = models.FloatField(null=True)
 
     attacks_home = models.IntegerField(null = True)
     attacks_away = models.IntegerField(null = True)
@@ -55,3 +64,10 @@ class EventState(models.Model):
         ordering = ['-created_at']
         verbose_name = 'Event State'
         verbose_name_plural = 'Event States'
+
+
+class CurrentEventState(EventState):
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Current Event State'
+        verbose_name_plural = 'Current Event States'

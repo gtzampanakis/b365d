@@ -29,7 +29,6 @@
 # 21) Shots on target for away
 # 22) Shots off target for home
 # 23) Shots off target for away
-
 # 24) Corners home
 # 25) Corners away
 # 26) Yellow cards home
@@ -37,6 +36,7 @@
 # 28) Red cards home
 # 29) Red cards away
 # 30) Game id
+
 # 31) First asian handicap market for that game id
 # 32) ah home odds
 # 33) ah away odds
@@ -56,9 +56,9 @@ import logging
 import os
 import requests
 
-import dao
-import throttle
-import util
+import b365dapp.down.dao as dao
+import b365dapp.throttle as throttle
+import b365dapp.util as util
 
 LOGGER = logging.getLogger(__name__)
 
@@ -95,20 +95,20 @@ ych = 'yellow_cards_home'
 yca = 'yellow_cards_away'
 rch = 'red_cards_home'
 rca = 'red_cards_away'
-
-game_id = 'game_id'
-fah = 'first_asian_handicap'
-fahh = 'first_asian_handicap_home_odds'
-faha = 'first_asian_handicap_away'
-ftl = 'first_total_line'
-ftlo = 'first_total_line_over'
-ftlu = 'first_total_line_under'
 hah = 'halftime_asian_handicap'
 hahh = 'halftime_asian_handicap_home_odds'
 haha = 'halftime_asian_handicap_away_odds'
 htl = 'halftime_total_line'
 htlo = 'halftime_total_line_over'
 htlu = 'halftime_total_line_under'
+game_id = 'game_id'
+
+fah = 'first_asian_handicap'
+fahh = 'first_asian_handicap_home_odds'
+faha = 'first_asian_handicap_away'
+ftl = 'first_total_line'
+ftlo = 'first_total_line_over'
+ftlu = 'first_total_line_under'
 
 
 ON_TARGET = "On Target"
@@ -223,6 +223,9 @@ class Updater:
         d = {from_api: {}, internal: {}}
         di = d[internal]
         da = d[from_api]
+        
+        assert self.fi is not None
+        da[game_id] = self.fi
 
         da[es] = util.safe_apply(
             event_info.get('EV', 'TU'),
@@ -263,6 +266,19 @@ class Updater:
                 lambda l: l[i],
                 util.frac_to_dec)
 
+        da[hah] = util.safe_apply(
+            event_info.get('MA->PA', 'HA',
+                           lambda o: o['NA'].startswith('1st Half Asian Handicap')),
+            lambda l: l[0],
+            util.frac_to_dec)
+
+        for k,i in zip([hahh, haha], [0, 1]):
+            da[k] = util.safe_apply(
+                event_info.get('MA->PA', 'OD',
+                               lambda o: o['NA'].startswith('1st Half Asian Handicap')),
+                lambda l: l[i],
+                util.frac_to_dec)
+
         da[tl] = util.safe_apply(
             event_info.get('MA->PA', 'HA',
                            lambda o: o['NA'] == 'Match Goals'),
@@ -273,6 +289,32 @@ class Updater:
             da[k] = util.safe_apply(
                 event_info.get('MA->PA', 'OD',
                                lambda o: o['NA'] == 'Match Goals'),
+                lambda l: l[i],
+                util.frac_to_dec)
+
+        da[tl] = util.safe_apply(
+            event_info.get('MA->PA', 'HA',
+                           lambda o: o['NA'].startswith('Goal Line')),
+            lambda l: l[0],
+            util.frac_to_dec)
+
+        for k,i in zip([tlo, tlu], [0, 1]):
+            da[k] = util.safe_apply(
+                event_info.get('MA->PA', 'OD',
+                               lambda o: o['NA'].startswith('Goal Line')),
+                lambda l: l[i],
+                util.frac_to_dec)
+
+        da[htl] = util.safe_apply(
+            event_info.get('MA->PA', 'HA',
+                           lambda o: o['NA'].startswith('1st Half Goal Line')),
+            lambda l: l[0],
+            util.frac_to_dec)
+
+        for k,i in zip([htlo, htlu], [0, 1]):
+            da[k] = util.safe_apply(
+                event_info.get('MA->PA', 'OD',
+                               lambda o: o['NA'].startswith('1st Half Goal Line')),
                 lambda l: l[i],
                 util.frac_to_dec)
 
@@ -350,6 +392,7 @@ class Updater:
             try:
                 if obj['type'] == 'EV':
                     fi = obj['FI']
+                    self.fi = fi
                     event_info = self.get_event_info(fi)
                     try:
                         event_stats = self.get_event_stats(fi)
@@ -359,6 +402,8 @@ class Updater:
                     self.handle_event_info(event_info, event_stats)
             except Exception as e:
                 LOGGER.exception(e)
+            finally:
+                self.fi = None
 
     def run(self):
         while True:

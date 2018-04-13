@@ -1,4 +1,5 @@
 from django.core.management.base import BaseCommand, CommandError
+import b365dapp.down.down
 
 class Command(BaseCommand):
     help = 'Downloads data from betsapi.com'
@@ -7,6 +8,5 @@ class Command(BaseCommand):
         pass
 
     def handle(self, *args, **options):
-        import b365dapp.down
-        updater = b365dapp.down.Updater(3600)
+        updater = b365dapp.down.down.Updater(3600)
         updater.run()
