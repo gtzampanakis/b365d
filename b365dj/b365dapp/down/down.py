@@ -195,7 +195,7 @@ class Updater:
 
     def get_event_list(self):
         response = self.throttler.call(self.session.get, EVENT_LIST_URL)
-        assert response.status_code == 200
+        assert response.status_code == 200, response.status_code
         j = response.json()
         assert j['success'] == 1
         return j['results'][0]
@@ -203,7 +203,7 @@ class Updater:
     def get_event_info(self, fi):
         url = get_event_info_url(fi)
         response = self.throttler.call(self.session.get, url)
-        assert response.status_code == 200
+        assert response.status_code == 200, response.status_code
         j = response.json()
         assert j['success'] == 1
         return EventInfo(j['results'][0])
@@ -211,7 +211,7 @@ class Updater:
     def get_event_stats(self, fi):
         url = get_event_stats_url(fi)
         response = self.throttler.call(self.session.get, url)
-        assert response.status_code == 200
+        assert response.status_code == 200, response.status_code
         j = response.json()
         assert j['success'] == 1
         return EventInfo(j['results'][0])
