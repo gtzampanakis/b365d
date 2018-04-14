@@ -386,20 +386,38 @@ class Updater:
 
         dao.save_record(d)
 
+
+    def expire_current_states(self, event_list):
+        dao.expire_current_states(self.event_list_to_fis(event_list))
+
+
+    def event_list_to_fis(self, event_list):
+        fis = []
+        for obj in event_list:
+            if obj['type'] == 'EV':
+                if 'FI' in obj:
+                    fis.append(obj['FI'])
+        return fis
+
+
     def run_cycle(self):
-        objs = self.get_event_list()
-        for obj in objs:
+        event_list = self.get_event_list()
+        fis = self.event_list_to_fis(event_list)
+        self.expire_current_states(event_list)
+        for fi in fis:
             try:
-                if obj['type'] == 'EV':
-                    fi = obj['FI']
-                    self.fi = fi
+                self.fi = fi
+                try:
                     event_info = self.get_event_info(fi)
-                    try:
-                        event_stats = self.get_event_stats(fi)
-                    except Exception as e:
-                        LOGGER.exception(e)
-                        event_stats = None
-                    self.handle_event_info(event_info, event_stats)
+                except Exception as e:
+                    LOGGER.exception(e)
+                    continue
+                try:
+                    event_stats = self.get_event_stats(fi)
+                except Exception as e:
+                    LOGGER.exception(e)
+                    event_stats = None
+                self.handle_event_info(event_info, event_stats)
             except Exception as e:
                 LOGGER.exception(e)
             finally:

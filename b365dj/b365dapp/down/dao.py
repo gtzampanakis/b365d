@@ -44,3 +44,9 @@ def save_record(record):
 
     CurrentEventState.objects.filter(game_id = db_obj.game_id).delete()
     CurrentEventState.objects.create(**d)
+
+
+def expire_current_states(fis):
+    info = CurrentEventState.objects.exclude(game_id__in = fis).delete()
+    if info[0]:
+        LOGGER.info('Deleted %s expired current event states', info[0])

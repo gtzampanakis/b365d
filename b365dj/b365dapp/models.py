@@ -4,7 +4,7 @@ from __future__ import unicode_literals
 from django.db import models
 
 
-class EventState(models.Model):
+class EventStateBase(models.Model):
     game_id = models.CharField(max_length=1024, db_index=True)
     event_start = models.DateTimeField(null=True, db_index=True)
 
@@ -61,13 +61,18 @@ class EventState(models.Model):
     created_at = models.DateTimeField(auto_now_add = True, db_index = True)
 
     class Meta:
+        abstract = True
+
+
+class EventState(EventStateBase):
+    class Meta:
         ordering = ['-created_at']
         verbose_name = 'Event State'
         verbose_name_plural = 'Event States'
 
 
-class CurrentEventState(EventState):
+class CurrentEventState(EventStateBase):
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['created_at']
         verbose_name = 'Current Event State'
         verbose_name_plural = 'Current Event States'

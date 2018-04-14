@@ -1,50 +1,97 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 
+import datetime
+import os
+
+import xlsxwriter
+
+from django.conf import settings
 from django.contrib import admin
-from b365dapp.models import EventState
+from django.http.response import HttpResponse
+from b365dapp.models import (
+    EventStateBase,
+    EventState,
+    CurrentEventState,
+)
 
-class EventStateAdmin(admin.ModelAdmin):
-    fields = [
-        'id',
-        'event_start',
 
-        'home_team',
-        'away_team',
+def export_selected(modeladmin, request, queryset):
+    suffix = (
+        datetime.datetime.utcnow().isoformat()
+        .replace('-', '.')
+        .replace(':', '.')
+        .replace(' ', '.')
+        .replace('T', '.')
+    ) + '.xlsx'
+    filename = (
+        'Export_' +
+        (modeladmin.model._meta.verbose_name + '_' + suffix).replace(' ', '_'))
+    path = os.path.join(settings.WORK_DIR, filename)
 
-        'league',
+    wb = xlsxwriter.Workbook(path)
+    date_format = wb.add_format({'num_format': 'yyyy-mm-dd hh:mm:ss'})
+    worksheet = wb.add_worksheet()
 
-        'current_home_goals',
-        'current_away_goals',
+    fields = [f.name for f in modeladmin.model._meta.get_fields()]
 
-        'asian_handicap',
-        'asian_handicap_home_odds',
-        'asian_handicap_away_odds',
+    for field, size in {
+        'event_start': 20,
+        'created_at': 20,
+        'home_team': 30,
+        'away_team': 30,
+        'league': 30,
+    }.iteritems():
+        worksheet.set_column(
+            fields.index(field),
+            fields.index(field),
+            size,
+        )
 
-        'total_line',
-        'total_line_over',
-        'total_line_under',
+    for fieldi, field in enumerate(fields):
+        worksheet.write(0, fieldi, field)
+    
+    for recordi, record in enumerate(queryset, 1):
+        for fieldi, field in enumerate(fields):
+            val = getattr(record, field, '')
+            if (
+                isinstance(val, datetime.date)
+                    or
+                isinstance(val, datetime.datetime)
+            ):
+                worksheet.write(recordi, fieldi, val, date_format)
+            else:
+                worksheet.write(recordi, fieldi, val)
+    wb.close()
 
-        'attacks_home',
-        'attacks_away',
-        'dangerous_attacks_home',
-        'dangerous_attacks_away',
-        'possession_home',
-        'possession_away',
-        'shots_on_target_home',
-        'shots_on_target_away',
-        'shots_off_target_home',
-        'shots_off_target_away',
+    fo = open(path, 'rb')
 
-        'corners_home',
-        'corners_away',
-        'yellow_cards_home',
-        'yellow_cards_away',
-        'red_cards_home',
-        'red_cards_away',
+    response = HttpResponse(
+		fo,
+		content_type = 
+			'application/'
+			'vnd.openxmlformats-officedocument.'
+			'spreadsheetml.sheet'
+	)
+    response['Content-Disposition'] = 'attachment; filename=%s' % filename
+    return response
 
-        'created_at',
-    ]
+export_selected.short_description = "Export selected records to Excel"
+
+
+class EventStateBaseAdmin(admin.ModelAdmin):
+    fields = [f.name for f in EventState._meta.get_fields()]
     list_display = fields
+    actions = [export_selected]
+
+
+class EventStateAdmin(EventStateBaseAdmin):
+    pass
+
+
+class CurrentEventStateAdmin(EventStateBaseAdmin):
+    list_per_page = 2000
+
 
 admin.site.register(EventState, EventStateAdmin)
+admin.site.register(CurrentEventState, CurrentEventStateAdmin)
