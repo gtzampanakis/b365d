@@ -327,61 +327,61 @@ class Updater:
                 if value in STATS_DESCS:
                     desc_to_field[value] = field
             
-        if ATTACKS in desc_to_field:
-            for k,i in zip([atth, atta], [0, 1]):
+            if ATTACKS in desc_to_field:
+                for k,i in zip([atth, atta], [0, 1]):
+                    da[k] = util.safe_apply(
+                        event_stats.get('EV->TE', desc_to_field[ATTACKS]),
+                        lambda l: l[i],
+                        float)
+
+            if DANGEROUS_ATTACKS in desc_to_field:
+                for k,i in zip([datth, datta], [0, 1]):
+                    da[k] = util.safe_apply(
+                        event_stats.get('EV->TE', desc_to_field[DANGEROUS_ATTACKS]),
+                        lambda l: l[i],
+                        float)
+
+            if POSSESSION in desc_to_field:
+                for k,i in zip([ph, pa], [0, 1]):
+                    da[k] = util.safe_apply(
+                        event_stats.get('EV->TE', desc_to_field[POSSESSION]),
+                        lambda l: l[i],
+                        float)
+
+            if ON_TARGET in desc_to_field:
+                for k,i in zip([shnh, shna], [0, 1]):
+                    da[k] = util.safe_apply(
+                        event_stats.get('EV->TE', desc_to_field[ON_TARGET]),
+                        lambda l: l[i],
+                        float)
+
+            if OFF_TARGET in desc_to_field:
+                for k,i in zip([shoh, shoa], [0, 1]):
+                    da[k] = util.safe_apply(
+                        event_stats.get('EV->TE', desc_to_field[OFF_TARGET]),
+                        lambda l: l[i],
+                        float)
+
+            for k,i in zip([ch, ca], [0, 1]):
                 da[k] = util.safe_apply(
-                    event_stats.get('EV->TE', desc_to_field[ATTACKS]),
+                    event_stats.get('SC->SL', 'D1',
+                        lambda o: o['NA'] == 'ICorner'),
                     lambda l: l[i],
                     float)
 
-        if DANGEROUS_ATTACKS in desc_to_field:
-            for k,i in zip([datth, datta], [0, 1]):
+            for k,i in zip([ych, yca], [0, 1]):
                 da[k] = util.safe_apply(
-                    event_stats.get('EV->TE', desc_to_field[DANGEROUS_ATTACKS]),
+                    event_stats.get('SC->SL', 'D1',
+                        lambda o: o['NA'] == 'IYellowCard'),
                     lambda l: l[i],
                     float)
 
-        if POSSESSION in desc_to_field:
-            for k,i in zip([ph, pa], [0, 1]):
+            for k,i in zip([rch, rca], [0, 1]):
                 da[k] = util.safe_apply(
-                    event_stats.get('EV->TE', desc_to_field[POSSESSION]),
+                    event_stats.get('SC->SL', 'D1',
+                        lambda o: o['NA'] == 'IRedCard'),
                     lambda l: l[i],
                     float)
-
-        if ON_TARGET in desc_to_field:
-            for k,i in zip([shnh, shna], [0, 1]):
-                da[k] = util.safe_apply(
-                    event_stats.get('EV->TE', desc_to_field[ON_TARGET]),
-                    lambda l: l[i],
-                    float)
-
-        if OFF_TARGET in desc_to_field:
-            for k,i in zip([shoh, shoa], [0, 1]):
-                da[k] = util.safe_apply(
-                    event_stats.get('EV->TE', desc_to_field[OFF_TARGET]),
-                    lambda l: l[i],
-                    float)
-
-        for k,i in zip([ch, ca], [0, 1]):
-            da[k] = util.safe_apply(
-                event_stats.get('SC->SL', 'D1',
-                    lambda o: o['NA'] == 'ICorner'),
-                lambda l: l[i],
-                float)
-
-        for k,i in zip([ych, yca], [0, 1]):
-            da[k] = util.safe_apply(
-                event_stats.get('SC->SL', 'D1',
-                    lambda o: o['NA'] == 'IYellowCard'),
-                lambda l: l[i],
-                float)
-
-        for k,i in zip([rch, rca], [0, 1]):
-            da[k] = util.safe_apply(
-                event_stats.get('SC->SL', 'D1',
-                    lambda o: o['NA'] == 'IRedCard'),
-                lambda l: l[i],
-                float)
         # End stats.
 
         dao.save_record(d)
