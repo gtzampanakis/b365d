@@ -51,6 +51,7 @@
 # 42) under odds
 
 import datetime
+import decimal
 import json
 import logging
 import os
@@ -257,7 +258,7 @@ class Updater:
             event_info.get('MA->PA', 'HA',
                            lambda o: o['NA'].startswith('Asian Handicap')),
             lambda l: l[0],
-            util.frac_to_dec)
+            float)
 
         for k,i in zip([ahho, ahao], [0, 1]):
             da[k] = util.safe_apply(
@@ -270,7 +271,7 @@ class Updater:
             event_info.get('MA->PA', 'HA',
                            lambda o: o['NA'].startswith('1st Half Asian Handicap')),
             lambda l: l[0],
-            util.frac_to_dec)
+            float)
 
         for k,i in zip([hahh, haha], [0, 1]):
             da[k] = util.safe_apply(
@@ -278,12 +279,6 @@ class Updater:
                                lambda o: o['NA'].startswith('1st Half Asian Handicap')),
                 lambda l: l[i],
                 util.frac_to_dec)
-
-        da[tl] = util.safe_apply(
-            event_info.get('MA->PA', 'HA',
-                           lambda o: o['NA'] == 'Match Goals'),
-            lambda l: l[0],
-            util.frac_to_dec)
 
         for k,i in zip([tlo, tlu], [0, 1]):
             da[k] = util.safe_apply(
@@ -296,7 +291,7 @@ class Updater:
             event_info.get('MA->PA', 'HA',
                            lambda o: o['NA'].startswith('Goal Line')),
             lambda l: l[0],
-            util.frac_to_dec)
+            float)
 
         for k,i in zip([tlo, tlu], [0, 1]):
             da[k] = util.safe_apply(
@@ -309,7 +304,7 @@ class Updater:
             event_info.get('MA->PA', 'HA',
                            lambda o: o['NA'].startswith('1st Half Goal Line')),
             lambda l: l[0],
-            util.frac_to_dec)
+            float)
 
         for k,i in zip([htlo, htlu], [0, 1]):
             da[k] = util.safe_apply(
@@ -384,6 +379,7 @@ class Updater:
                     float)
         # End stats.
 
+        self.sanity_check_for_record(d)
         dao.save_record(d)
 
 
@@ -399,6 +395,37 @@ class Updater:
                     fis.append(obj['FI'])
         return fis
 
+    
+    def sanity_check_for_record(self, record):
+        record = record['from_api']
+
+        if (
+                record[ah] is not None
+            and record[hah] is not None
+            and (
+                    record[hah] * record[ah] < 0
+                or  abs(record[hah]) > abs(record[ah])
+            )
+        ):
+            import pdb; pdb.set_trace()
+            LOGGER.warning(
+                'Found record with hah > ah: %s > %s '
+                'derived from data: %s',
+                record[hah], record[ah], self.event_info.evinfolist)
+
+        if (
+                record[tl] is not None
+            and record[htl] is not None
+            and (
+                    record[htl] * record[tl] < 0
+                or  abs(record[htl]) > abs(record[tl])
+            )
+        ):
+            LOGGER.warning(
+                'Found record with htl > tl: %s > %s '
+                'derived from data: %s',
+                record[htl], record[tl], self.event_info.evinfolist)
+
 
     def run_cycle(self):
         event_list = self.get_event_list()
@@ -409,6 +436,7 @@ class Updater:
                 self.fi = fi
                 try:
                     event_info = self.get_event_info(fi)
+                    self.event_info = event_info
                 except Exception as e:
                     LOGGER.exception(e)
                     continue
