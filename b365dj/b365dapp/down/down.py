@@ -425,7 +425,6 @@ class Updater:
                 or  abs(record[hah]) > abs(record[ah])
             )
         ):
-            import pdb; pdb.set_trace()
             LOGGER.warning(
                 'Found record with hah > ah: %s > %s '
                 'derived from data: %s',
