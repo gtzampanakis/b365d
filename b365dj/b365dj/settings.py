@@ -123,6 +123,7 @@ USE_TZ = False
 STATIC_URL = '/static/'
 
 LOG_DIR = os.path.join(WORK_DIR, 'log')
+STATIC_ROOT = os.path.join(WORK_DIR, 'static')
 
 if not os.path.exists(LOG_DIR):
     os.makedirs(LOG_DIR)
