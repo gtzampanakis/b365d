@@ -133,23 +133,14 @@ LOGGING = {
     'disable_existing_loggers': False,
     'handlers': {
         'console': {
-            'level': 'DEBUG' if DEBUG else 'INFO',
-            'class': 'logging.StreamHandler',
-            'formatter': 'simple',
-        },
-        'debug_file': {
             'level': 'DEBUG',
-            'class': 'logging.handlers.RotatingFileHandler',
+            'class': 'logging.StreamHandler',
             'formatter': 'verbose',
-            'filename': os.path.join(LOG_DIR, 'debug.log'),
-            'maxBytes': 10 * 1024 * 1024,
-            'backupCount': 10,
-            'encoding': 'utf-8',
         },
     },
     'loggers': {
         '': {
-            'handlers': ['console', 'debug_file'],
+            'handlers': ['console'],
             'level': 'NOTSET',
             'propagate': True,
         },
