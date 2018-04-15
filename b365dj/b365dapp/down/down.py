@@ -56,12 +56,15 @@ import json
 import logging
 import os
 import requests
+import time
 
 import b365dapp.down.dao as dao
 import b365dapp.throttle as throttle
 import b365dapp.util as util
 
 LOGGER = logging.getLogger(__name__)
+
+MAX_SESSION_AGE = 60
 
 internal = 'internal'
 from_api = 'from_api'
@@ -192,10 +195,25 @@ class Updater:
     def __init__(self, rph):
         self.rph = rph
         self.throttler = throttle.Throttler(self.rph)
-        self.session = requests.Session()
+        self.session = None
+    
+    def get_session(self):
+        if self.session is None:
+            self.session = requests.Session()
+            self.session_t0 = time.time()
+            return self.session
+        else:
+            if time.time() - self.session_t0 > MAX_SESSION_AGE:
+                LOGGER.debug('Replacing session because it reached its max age')
+                if self.session is not None:
+                    self.session.close()
+                self.session = None
+                return self.get_session()
+            else:
+                return self.session
 
     def get_event_list(self):
-        response = self.throttler.call(self.session.get, EVENT_LIST_URL)
+        response = self.throttler.call(self.get_session().get, EVENT_LIST_URL)
         assert response.status_code == 200, response.status_code
         j = response.json()
         assert j['success'] == 1
@@ -203,7 +221,7 @@ class Updater:
 
     def get_event_info(self, fi):
         url = get_event_info_url(fi)
-        response = self.throttler.call(self.session.get, url)
+        response = self.throttler.call(self.get_session().get, url)
         assert response.status_code == 200, response.status_code
         j = response.json()
         assert j['success'] == 1
@@ -211,7 +229,7 @@ class Updater:
 
     def get_event_stats(self, fi):
         url = get_event_stats_url(fi)
-        response = self.throttler.call(self.session.get, url)
+        response = self.throttler.call(self.get_session().get, url)
         assert response.status_code == 200, response.status_code
         j = response.json()
         assert j['success'] == 1
