@@ -42,6 +42,19 @@ def save_record(record):
 
     db_obj = EventState.objects.create(**d)
 
+# It's important not to change id for existing game_id. If it is changed then
+# when exporting CurrentEventStates using a list of id values (as it is done by
+# the admin action) any events that have been updated in the meantime will be
+# omitted by the export.
+    existing = CurrentEventState.objects.filter(game_id = db_obj.game_id).first()
+
+    if existing is None:
+        id_to_save = None
+    else:
+        id_to_save = existing.id
+
+    d['id'] = id_to_save
+
     CurrentEventState.objects.filter(game_id = db_obj.game_id).delete()
     CurrentEventState.objects.create(**d)
 
