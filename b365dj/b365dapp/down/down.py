@@ -55,6 +55,7 @@ import decimal
 import json
 import logging
 import os
+import pytz
 import requests
 import time
 
@@ -75,6 +76,7 @@ ts = 'timestamp'
 # London time.
 ps = 'period_start'
 
+mm = 'match_minutes'
 ms = 'match_seconds'
 chg = 'current_home_goals'
 cag = 'current_away_goals'
@@ -140,6 +142,9 @@ EVENT_LIST_URL = (
 
 EVENT_INFO_URL = 'https://api.betsapi.com/v1/bet365/event?token=%s&FI=%s'
 EVENT_STATS_URL = 'https://api.betsapi.com/v1/bet365/event?token=%s&FI=%s&stats=1'
+
+TZ_UTC = pytz.timezone('UTC')
+TZ_LONDON = pytz.timezone('Europe/London')
 
 
 def get_event_info_url(fi):
@@ -229,7 +234,7 @@ class Updater:
         assert response.status_code == 200, response.status_code
         j = response.json()
         assert j['success'] == 1
-        return EventInfo(j['results'][0])
+        return EventInfo(j['results'][0]), int(j['stats']['update_at'])
 
     def get_event_stats(self, fi):
         url = get_event_stats_url(fi)
@@ -239,10 +244,34 @@ class Updater:
         assert j['success'] == 1
         return EventInfo(j['results'][0])
 
-    def handle_event_list(self):
-        pass
+    def get_match_time(self, da_ps, event_info, update_at):
+        # if (TT)
+        # secs = now - TU(convert into unix epoch) + TM * 60 + TS
+        # }else {
+        #     secs = TM*60 + TS
+        # }
+        TT = event_info.get('EV', 'TT')
+        TM = event_info.get('EV', 'TM')
+        TS = event_info.get('EV', 'TS')
 
-    def handle_event_info(self, event_info, event_stats):
+        if not TT or not TM or not TS or not da_ps:
+            return None
+
+        TT = int(TT)
+        TM = int(TM)
+        TS = int(TS)
+
+        if TT == 1:
+            update_at_dt = TZ_UTC.localize(datetime.datetime.utcfromtimestamp(update_at))
+            seconds = (update_at_dt - da_ps).total_seconds() + TM * 60 + TS
+        else:
+            seconds = TM * 60 + TS
+
+        seconds = int(seconds)
+
+        return seconds / 60, seconds % 60
+
+    def handle_event_info(self, event_info, event_stats, update_at):
         d = {from_api: {}, internal: {}}
         di = d[internal]
         da = d[from_api]
@@ -258,7 +287,15 @@ class Updater:
                 int(o[6:8]),
                 int(o[8:10]),
                 int(o[10:12]),
-                int(o[12:14])))
+                int(o[12:14])),
+            TZ_LONDON.localize)
+        
+        try:
+            match_time = self.get_match_time(da[ps], event_info, update_at)
+            da[mm] = match_time[0]
+            da[ms] = match_time[1]
+        except Exception:
+            pass
 
         for k,i in zip([chg, cag], [0,1]):
             da[k] = util.safe_apply(
@@ -456,7 +493,7 @@ class Updater:
             try:
                 self.fi = fi
                 try:
-                    event_info = self.get_event_info(fi)
+                    event_info, update_at = self.get_event_info(fi)
                     self.event_info = event_info
                 except Exception as e:
                     LOGGER.exception(e)
@@ -466,7 +503,7 @@ class Updater:
                 except Exception as e:
                     LOGGER.exception(e)
                     event_stats = None
-                self.handle_event_info(event_info, event_stats)
+                self.handle_event_info(event_info, event_stats, update_at)
             except Exception as e:
                 LOGGER.exception(e)
             finally:

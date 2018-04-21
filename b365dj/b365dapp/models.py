@@ -8,6 +8,9 @@ class EventStateBase(models.Model):
     game_id = models.CharField(max_length=1024, db_index=True)
     period_start = models.DateTimeField(null=True, db_index=True)
 
+    match_minutes = models.IntegerField(null=True)
+    match_seconds = models.IntegerField(null=True)
+
     home_team = models.CharField(max_length=1024, db_index=True)
     away_team = models.CharField(max_length=1024, db_index=True)
 
