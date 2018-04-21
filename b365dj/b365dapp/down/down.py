@@ -71,7 +71,11 @@ from_api = 'from_api'
 
 ts = 'timestamp'
 
-es = 'event_start'
+# This is the time at which the current period (first/second half) started, in
+# London time.
+ps = 'period_start'
+
+ms = 'match_seconds'
 chg = 'current_home_goals'
 cag = 'current_away_goals'
 league = 'league'
@@ -246,7 +250,7 @@ class Updater:
         assert self.fi is not None
         da[game_id] = self.fi
 
-        da[es] = util.safe_apply(
+        da[ps] = util.safe_apply(
             event_info.get('EV', 'TU'),
             lambda o: datetime.datetime(
                 int(o[0:4]),
