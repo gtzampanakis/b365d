@@ -75,6 +75,11 @@ WSGI_APPLICATION = 'b365dj.wsgi.application'
 # https://docs.djangoproject.com/en/1.11/ref/settings/#databases
 
 WORK_DIR = os.environ['WORK_DIR']
+EXPORT_DIR = os.path.join(WORK_DIR, 'export_files')
+
+if not os.path.exists(EXPORT_DIR):
+    os.makedirs(EXPORT_DIR)
+
 
 DATABASES = {
     'default': {

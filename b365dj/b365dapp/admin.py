@@ -27,7 +27,7 @@ def export_selected(modeladmin, request, queryset):
     filename = (
         'Export_' +
         (modeladmin.model._meta.verbose_name + '_' + suffix).replace(' ', '_'))
-    path = os.path.join(settings.WORK_DIR, filename)
+    path = os.path.join(settings.EXPORT_DIR, filename)
 
     wb = xlsxwriter.Workbook(path)
     date_format = wb.add_format({'num_format': 'yyyy-mm-dd hh:mm:ss'})
