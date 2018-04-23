@@ -36,7 +36,7 @@ def export_selected(modeladmin, request, queryset):
     fields = [f.name for f in modeladmin.model._meta.get_fields()]
 
     for field, size in {
-        'event_start': 20,
+        'period_start': 20,
         'created_at': 20,
         'home_team': 30,
         'away_team': 30,
@@ -54,11 +54,11 @@ def export_selected(modeladmin, request, queryset):
     for recordi, record in enumerate(queryset, 1):
         for fieldi, field in enumerate(fields):
             val = getattr(record, field, '')
-            if (
-                isinstance(val, datetime.date)
-                    or
-                isinstance(val, datetime.datetime)
-            ):
+# Order is important here because datetime is a date but date is not a
+# datetime...
+            if isinstance(val, datetime.datetime):
+                worksheet.write(recordi, fieldi, val.replace(tzinfo=None), date_format)
+            elif isinstance(val, datetime.date):
                 worksheet.write(recordi, fieldi, val, date_format)
             else:
                 worksheet.write(recordi, fieldi, val)
