@@ -8,5 +8,5 @@ class Command(BaseCommand):
         pass
 
     def handle(self, *args, **options):
-        updater = b365dapp.down.down.Updater(3600)
+        updater = b365dapp.down.down.Updater(199999)
         updater.run()
