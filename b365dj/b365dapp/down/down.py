@@ -55,12 +55,13 @@ import decimal
 import json
 import logging
 import os
-import pytz
-import requests
+import threading
 import time
 
+import pytz
+import requests
+
 import b365dapp.down.dao as dao
-import b365dapp.throttle as throttle
 import b365dapp.util as util
 
 LOGGER = logging.getLogger(__name__)
@@ -199,11 +200,18 @@ class EventInfo:
                 return result
 
 
-class Updater:
+class SubsetUpdater:
+    """
+    Only processes a subset of the found events (those with fi % mod_val ==
+    mod_to_keep). Intended to be used in a thread.
+    """
 
-    def __init__(self, rph):
-        self.rph = rph
-        self.throttler = throttle.Throttler(self.rph)
+    def __init__(self, throttler, max_concurrent_requests, mod_to_keep, mod_val):
+        self.throttler = throttler
+        self.mod_to_keep = mod_to_keep
+        self.mod_val = mod_val
+        self.max_concurrent_requests = max_concurrent_requests
+        self.request_semaphore = threading.Semaphore(max_concurrent_requests)
         self.session = None
     
     def get_session(self):
@@ -220,9 +228,13 @@ class Updater:
                 return self.get_session()
             else:
                 return self.session
+    
+    def call_via_throttler(self, *args, **kwargs):
+        with self.request_semaphore:
+            return self.throttler.call(*args, **kwargs)
 
     def get_event_list(self):
-        response = self.throttler.call(self.get_session().get, EVENT_LIST_URL)
+        response = self.call_via_throttler(self.get_session().get, EVENT_LIST_URL)
         assert response.status_code == 200, response.status_code
         j = response.json()
         assert j['success'] == 1
@@ -230,7 +242,7 @@ class Updater:
 
     def get_event_info(self, fi):
         url = get_event_info_url(fi)
-        response = self.throttler.call(self.get_session().get, url)
+        response = self.call_via_throttler(self.get_session().get, url)
         assert response.status_code == 200, response.status_code
         j = response.json()
         assert j['success'] == 1
@@ -238,7 +250,7 @@ class Updater:
 
     def get_event_stats(self, fi):
         url = get_event_stats_url(fi)
-        response = self.throttler.call(self.get_session().get, url)
+        response = self.call_via_throttler(self.get_session().get, url)
         assert response.status_code == 200, response.status_code
         j = response.json()
         assert j['success'] == 1
@@ -443,7 +455,8 @@ class Updater:
 
 
     def expire_current_states(self, event_list):
-        dao.expire_current_states(self.event_list_to_fis(event_list))
+        dao.expire_current_states(
+            self.event_list_to_fis(event_list), self.mod_val, self.mod_to_keep)
 
 
     def event_list_to_fis(self, event_list):
@@ -451,7 +464,9 @@ class Updater:
         for obj in event_list:
             if obj['type'] == 'EV':
                 if 'FI' in obj:
-                    fis.append(obj['FI'])
+                    fi = obj['FI']
+                    if int(fi) % self.mod_val == self.mod_to_keep:
+                        fis.append(fi)
         return fis
 
     
@@ -516,3 +531,31 @@ class Updater:
             except Exception as e:
                 LOGGER.exception(e)
 
+def run_parallel(throttler, max_concurrent_requests, n_threads):
+    threads = []
+    for mod_to_keep in xrange(n_threads):
+        subset_updater = SubsetUpdater(
+            throttler = throttler,
+            max_concurrent_requests = max_concurrent_requests,
+            mod_to_keep = mod_to_keep,
+            mod_val = n_threads,
+        )
+        thread = threading.Thread(
+            target = subset_updater.run,
+            name = 'subset_updater %s/%s' % (mod_to_keep, n_threads),
+        )
+        thread.daemon = True
+        threads.append(thread)
+
+    for thread in threads:
+        thread.start()
+
+# If any of the threads stops, exit the whole program. Threads are designed
+# not to stop. If one stops it means there was an unexpected error.
+    done = False
+    while not done:
+        for thread in threads:
+            thread.join(.1)
+            if not thread.is_alive:
+                done = True
+                break

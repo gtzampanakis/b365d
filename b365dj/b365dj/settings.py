@@ -158,7 +158,7 @@ LOGGING = {
                 '%(message)s'
         },
         'simple': {
-            'format': '%(levelname)s %(name)s %(message)s'
+            'format': '%(levelname)s %(thread)d %(name)s %(message)s'
         },
     },
 }

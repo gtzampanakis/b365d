@@ -1,3 +1,4 @@
+import threading
 import logging
 
 from django.db import transaction
@@ -7,7 +8,8 @@ from b365dapp.models import (
 
 LOGGER = logging.getLogger(__name__)
 
-@transaction.atomic
+_LOCK = threading.Lock()
+
 def save_record(record):
     d = record['from_api']
 
@@ -40,7 +42,8 @@ def save_record(record):
 
     LOGGER.debug('save_record: Saving record: %s', d)
 
-    db_obj = EventState.objects.create(**d)
+    with _LOCK:
+        db_obj = EventState.objects.create(**d)
 
 # It's important not to change id for existing game_id. If it is changed then
 # when exporting CurrentEventStates using a list of id values (as it is done by
@@ -55,11 +58,19 @@ def save_record(record):
 
     d['id'] = id_to_save
 
-    CurrentEventState.objects.filter(game_id = db_obj.game_id).delete()
-    CurrentEventState.objects.create(**d)
+    with _LOCK:
+        with transaction.atomic():
+            CurrentEventState.objects.filter(game_id = db_obj.game_id).delete()
+            CurrentEventState.objects.create(**d)
 
 
-def expire_current_states(fis):
-    info = CurrentEventState.objects.exclude(game_id__in = fis).delete()
+def expire_current_states(fis, mod_val, mod_to_keep):
+    to_delete = []
+    for obj in CurrentEventState.objects.all():
+        if int(obj.game_id) % mod_val == mod_to_keep:
+            if obj.game_id not in fis:
+                to_delete.append(obj.game_id)
+    with _LOCK:
+        info = CurrentEventState.objects.filter(game_id__in = to_delete).delete()
     if info[0]:
         LOGGER.info('Deleted %s expired current event states', info[0])
