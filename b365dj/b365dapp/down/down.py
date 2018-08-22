@@ -201,9 +201,10 @@ class EventInfo:
 
 class Updater:
 
-    def __init__(self, rph):
-        self.rph = rph
-        self.throttler = throttle.Throttler(self.rph)
+    def __init__(self, reqs_per_hour, mod_keep, mod_val):
+        self.throttler = throttle.Throttler(reqs_per_hour)
+        self.mod_keep = mod_keep
+        self.mod_val = mod_val
         self.session = None
     
     def get_session(self):
@@ -451,7 +452,9 @@ class Updater:
         for obj in event_list:
             if obj['type'] == 'EV':
                 if 'FI' in obj:
-                    fis.append(obj['FI'])
+                    fi = obj['FI']
+                    if int(fi) % self.mod_val == self.mod_keep:
+                        fis.append(fi)
         return fis
 
     
