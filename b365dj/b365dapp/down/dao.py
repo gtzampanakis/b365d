@@ -1,7 +1,8 @@
+import datetime
 import threading
 import logging
 
-from django.db import transaction
+from django.db import transaction, connection
 
 from b365dapp.models import (
     EventState, CurrentEventState)
@@ -74,3 +75,26 @@ def expire_current_states(fis, mod_val, mod_to_keep):
         info = CurrentEventState.objects.filter(game_id__in = to_delete).delete()
     if info[0]:
         LOGGER.info('Deleted %s expired current event states', info[0])
+
+def vacuum():
+    try:
+        LOGGER.info('vacuum: start')
+        with _LOCK:
+            cursor = connection.cursor()
+            cursor.execute('vacuum')
+        LOGGER.info('vacuum: end')
+    except Exception as e:
+        LOGGER.exception(e)
+
+def trim_data():
+    try:
+        LOGGER.info('trim_data: start')
+        with _LOCK:
+            info = EventState.objects.filter(
+                created_at__lt = datetime.datetime.now() - datetime.timedelta(days=7)
+            ).delete()
+        if info[0]:
+            LOGGER.info('Deleted %s old event states', info[0])
+        LOGGER.info('trim_data: end')
+    except Exception as e:
+        LOGGER.exception(e)

@@ -60,6 +60,7 @@ import time
 
 import pytz
 import requests
+import schedule
 
 import b365dapp.down.dao as dao
 import b365dapp.util as util
@@ -531,6 +532,20 @@ class SubsetUpdater:
             except Exception as e:
                 LOGGER.exception(e)
 
+class Scheduler(threading.Thread):
+    def __init__(self):
+        threading.Thread.__init__(self)
+        self.name = 'scheduler'
+        self.daemon = True
+
+        schedule.every().day.at('01:00').do(dao.trim_data)
+        schedule.every().tuesday.at('03:00').do(dao.vacuum)
+
+    def run(self):
+        while True:
+            schedule.run_pending()
+            time.sleep(1)
+
 def run_parallel(throttler, max_concurrent_requests, n_threads):
     threads = []
     for mod_to_keep in xrange(n_threads):
@@ -549,6 +564,8 @@ def run_parallel(throttler, max_concurrent_requests, n_threads):
 
     for thread in threads:
         thread.start()
+
+    Scheduler().start()
 
 # If any of the threads stops, exit the whole program. Threads are designed
 # not to stop. If one stops it means there was an unexpected error.
