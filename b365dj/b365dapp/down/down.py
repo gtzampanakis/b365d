@@ -578,6 +578,6 @@ def run_parallel(throttler, max_concurrent_requests, n_threads):
             break
         for thread in threads:
             thread.join(.1)
-            if not thread.is_alive:
+            if not thread.is_alive():
                 done = True
                 break
