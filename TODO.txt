@@ -1,1 +1,3 @@
 Periodic task to delete old export files
+Stuck events
+What happens when a worker thread exits due to Exception (does the process exit?) (also test case for this)
