@@ -328,13 +328,12 @@ class SubsetUpdater:
 
         da[league] = event_info.get('EV', 'CT')
 
-        for k, i in zip([home, away], [0, 2]):
-            # Using apply instead of safe_apply because these fields are
-            # mandatory.
-            da[k] = util.apply(
-                event_info.get('MA->PA', 'NA',
-                               lambda o: o['NA'] == 'Fulltime Result'),
-                lambda l: l[i])
+# This appears to be the best way to get the team names. Initially I found them
+# in the Fulltime Result odds but then I found that those odds are not always
+# available.
+        segments = event_info.get('EV', 'NA').split(' v ')
+        da[home] = segments[0]
+        da[away] = segments[1]
         
         da[ah] = util.safe_apply(
             event_info.get('MA->PA', 'HA',
