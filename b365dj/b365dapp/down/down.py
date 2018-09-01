@@ -471,12 +471,17 @@ class SubsetUpdater:
 
     def event_list_to_fis(self, event_list):
         fis = []
+        current_sport = None
         for obj in event_list:
-            if obj['type'] == 'EV':
-                if 'FI' in obj:
-                    fi = obj['FI']
-                    if int(fi) % self.mod_val == self.mod_to_keep:
-                        fis.append(fi)
+            if obj['type'] == 'CL':
+                current_sport = obj['ID']
+
+            if current_sport == '1': # The code for Soccer is 1
+                if obj['type'] == 'EV':
+                    if 'FI' in obj:
+                        fi = obj['FI']
+                        if int(fi) % self.mod_val == self.mod_to_keep:
+                            fis.append(fi)
         return fis
 
     
