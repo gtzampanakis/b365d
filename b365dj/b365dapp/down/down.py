@@ -207,12 +207,18 @@ class SubsetUpdater:
     mod_to_keep). Intended to be used in a thread.
     """
 
-    def __init__(self, throttler, max_concurrent_requests, mod_to_keep, mod_val):
+    def __init__(
+        self, throttler, 
+        max_concurrent_requests,
+        mod_to_keep, mod_val,
+        exit_when,
+    ):
         self.throttler = throttler
         self.mod_to_keep = mod_to_keep
         self.mod_val = mod_val
         self.max_concurrent_requests = max_concurrent_requests
         self.request_semaphore = threading.Semaphore(max_concurrent_requests)
+        self.exit_when = exit_when
         self.session = None
     
     def get_session(self):
@@ -235,7 +241,9 @@ class SubsetUpdater:
             return self.throttler.call(*args, **kwargs)
 
     def get_event_list(self):
-        response = self.call_via_throttler(self.get_session().get, EVENT_LIST_URL)
+        url = EVENT_LIST_URL
+        LOGGER.info('Calling URL: %s', url)
+        response = self.call_via_throttler(self.get_session().get, url)
         assert response.status_code == 200, response.status_code
         j = response.json()
         assert j['success'] == 1
@@ -243,6 +251,7 @@ class SubsetUpdater:
 
     def get_event_info(self, fi):
         url = get_event_info_url(fi)
+        LOGGER.info('Calling URL: %s', url)
         response = self.call_via_throttler(self.get_session().get, url)
         assert response.status_code == 200, response.status_code
         j = response.json()
@@ -251,6 +260,7 @@ class SubsetUpdater:
 
     def get_event_stats(self, fi):
         url = get_event_stats_url(fi)
+        LOGGER.info('Calling URL: %s', url)
         response = self.call_via_throttler(self.get_session().get, url)
         assert response.status_code == 200, response.status_code
         j = response.json()
@@ -502,11 +512,15 @@ class SubsetUpdater:
 
 
     def run_cycle(self):
+        if self.exit_when.is_set():
+            return
         LOGGER.info('New cycle from thread %s/%s', self.mod_to_keep, self.mod_val)
         event_list = self.get_event_list()
         fis = self.event_list_to_fis(event_list)
         self.expire_current_states(event_list)
         for fi in fis:
+            if self.exit_when.is_set():
+                return
             try:
                 self.fi = fi
                 try:
@@ -527,56 +541,73 @@ class SubsetUpdater:
                 self.fi = None
 
     def run(self):
-        while True:
+        while not self.exit_when.is_set():
             try:
                 self.run_cycle()
             except Exception as e:
                 LOGGER.exception(e)
 
-class Scheduler(threading.Thread):
-    def __init__(self):
-        threading.Thread.__init__(self)
-        self.name = 'scheduler'
-        self.daemon = True
+class Scheduler:
+    def __init__(self, exit_when):
+        self.exit_when = exit_when
 
+    def run(self):
         schedule.every().day.at('01:00').do(dao.trim_data)
         schedule.every().tuesday.at('03:00').do(dao.vacuum)
 
-    def run(self):
-        while True:
+        while not self.exit_when.is_set():
             schedule.run_pending()
-            time.sleep(1)
+            time.sleep(.1)
 
 def run_parallel(throttler, max_concurrent_requests, n_threads):
-    threads = []
-    for mod_to_keep in xrange(n_threads):
-        subset_updater = SubsetUpdater(
-            throttler = throttler,
-            max_concurrent_requests = max_concurrent_requests,
-            mod_to_keep = mod_to_keep,
-            mod_val = n_threads,
+    worker_threads = []
+    exit_when = threading.Event()
+
+    try:
+        for mod_to_keep in xrange(n_threads):
+            subset_updater = SubsetUpdater(
+                throttler = throttler,
+                max_concurrent_requests = max_concurrent_requests,
+                mod_to_keep = mod_to_keep,
+                mod_val = n_threads,
+                exit_when = exit_when,
+            )
+            thread = threading.Thread(
+                target = subset_updater.run,
+                name = 'subset_updater %s/%s' % (mod_to_keep, n_threads),
+            )
+            worker_threads.append(thread)
+
+        for thread in worker_threads:
+            thread.start()
+
+        scheduler = Scheduler(exit_when)
+        scheduler_thread = threading.Thread(
+            target = scheduler.run,
+            name = 'scheduler',
         )
-        thread = threading.Thread(
-            target = subset_updater.run,
-            name = 'subset_updater %s/%s' % (mod_to_keep, n_threads),
-        )
-        thread.daemon = True
-        threads.append(thread)
+        scheduler_thread.start()
 
-    for thread in threads:
-        thread.start()
+        all_threads = worker_threads + [scheduler_thread]
 
-    Scheduler().start()
+# If any of the worker threads stops, exit the whole program. Worker threads
+# are designed not to stop. If one stops it means there was an unexpected
+# error.
+        done = False
+        while not done:
+            for thread in all_threads:
+                thread.join(.1)
+                if not thread.is_alive():
+                    LOGGER.warning(
+                        'Exiting because thread %s is not alive anymore' % thread)
+                    done = True
+                    break
 
-# If any of the threads stops, exit the whole program. Threads are designed
-# not to stop. If one stops it means there was an unexpected error.
-    done = False
-    while not done:
-        for thread in threads:
-            thread.join(.1)
-            if not thread.is_alive():
-                LOGGER.warning(
-                    'Exiting because thread %s is not alive anymore' % thread)
-                done = True
-                break
-    LOGGER.warning('Final line of down.py')
+    finally:
+        exit_when.set()
+        LOGGER.warning('Set exit_when to true')
+
+        for thread in all_threads:
+            LOGGER.warning('Joining thread %s...', thread)
+            thread.join()
+            LOGGER.warning('Successfully joined thread %s', thread)
