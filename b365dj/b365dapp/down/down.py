@@ -220,6 +220,8 @@ class SubsetUpdater:
         self.request_semaphore = threading.Semaphore(max_concurrent_requests)
         self.exit_when = exit_when
         self.session = None
+
+        self.timeout = (30., 30.)
     
     def get_session(self):
         if self.session is None:
@@ -235,7 +237,7 @@ class SubsetUpdater:
                 return self.get_session()
             else:
                 return self.session
-    
+
     def call_via_throttler(self, *args, **kwargs):
         with self.request_semaphore:
             return self.throttler.call(*args, **kwargs)
@@ -243,7 +245,7 @@ class SubsetUpdater:
     def get_event_list(self):
         url = EVENT_LIST_URL
         LOGGER.info('Calling URL: %s', url)
-        response = self.call_via_throttler(self.get_session().get, url)
+        response = self.call_via_throttler(self.get_session().get, url, timeout=self.timeout)
         assert response.status_code == 200, response.status_code
         j = response.json()
         assert j['success'] == 1
@@ -252,7 +254,7 @@ class SubsetUpdater:
     def get_event_info(self, fi):
         url = get_event_info_url(fi)
         LOGGER.info('Calling URL: %s', url)
-        response = self.call_via_throttler(self.get_session().get, url)
+        response = self.call_via_throttler(self.get_session().get, url, timeout=self.timeout)
         assert response.status_code == 200, response.status_code
         j = response.json()
         assert j['success'] == 1
@@ -261,7 +263,7 @@ class SubsetUpdater:
     def get_event_stats(self, fi):
         url = get_event_stats_url(fi)
         LOGGER.info('Calling URL: %s', url)
-        response = self.call_via_throttler(self.get_session().get, url)
+        response = self.call_via_throttler(self.get_session().get, url, timeout=self.timeout)
         assert response.status_code == 200, response.status_code
         j = response.json()
         assert j['success'] == 1
