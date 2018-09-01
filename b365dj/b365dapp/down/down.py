@@ -502,6 +502,7 @@ class SubsetUpdater:
 
 
     def run_cycle(self):
+        LOGGER.info('New cycle from thread %s/%s', self.mod_to_keep, self.mod_val)
         event_list = self.get_event_list()
         fis = self.event_list_to_fis(event_list)
         self.expire_current_states(event_list)
@@ -547,7 +548,6 @@ class Scheduler(threading.Thread):
             time.sleep(1)
 
 def run_parallel(throttler, max_concurrent_requests, n_threads):
-    EXPIRE_AFTER = 10 * 60
     threads = []
     for mod_to_keep in xrange(n_threads):
         subset_updater = SubsetUpdater(
@@ -568,16 +568,15 @@ def run_parallel(throttler, max_concurrent_requests, n_threads):
 
     Scheduler().start()
 
-    t0 = time.time()
-
 # If any of the threads stops, exit the whole program. Threads are designed
 # not to stop. If one stops it means there was an unexpected error.
     done = False
     while not done:
-        if time.time() > t0 + EXPIRE_AFTER:
-            break
         for thread in threads:
             thread.join(.1)
             if not thread.is_alive():
+                LOGGER.warning(
+                    'Exiting because thread %s is not alive anymore' % thread)
                 done = True
                 break
+    LOGGER.warning('Final line of down.py')
