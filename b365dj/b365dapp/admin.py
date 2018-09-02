@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
+
 
 import datetime
 import os
@@ -41,7 +41,7 @@ def export_selected(modeladmin, request, queryset):
         'home_team': 30,
         'away_team': 30,
         'league': 30,
-    }.iteritems():
+    }.items():
         worksheet.set_column(
             fields.index(field),
             fields.index(field),

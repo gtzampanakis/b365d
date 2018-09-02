@@ -399,7 +399,7 @@ class SubsetUpdater:
         # Start stats.
         if event_stats is not None:
             desc_to_field = {}
-            for suffix in xrange(1, 8):
+            for suffix in range(1, 8):
                 field = 'S' + str(suffix)
                 value = event_stats.get('EV', field)
                 if value in STATS_DESCS:
@@ -570,7 +570,7 @@ def run_parallel(throttler, max_concurrent_requests, n_threads):
     exit_when = threading.Event()
 
     try:
-        for mod_to_keep in xrange(n_threads):
+        for mod_to_keep in range(n_threads):
             subset_updater = SubsetUpdater(
                 throttler = throttler,
                 max_concurrent_requests = max_concurrent_requests,
