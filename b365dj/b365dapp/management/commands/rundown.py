@@ -10,10 +10,14 @@ class Command(BaseCommand):
         parser.add_argument('reqs_per_hour', type=int)
         parser.add_argument('max_concurrent_reqs', type=int)
         parser.add_argument('n_threads', type=int)
+        parser.add_argument('update_list_interval', type=int)
+        parser.add_argument('update_fi_interval', type=int)
 
     def handle(self, *args, **options):
-        b365dapp.down.down.run_parallel(
-            throttler = throttle.Throttler(options['reqs_per_hour']),
-            max_concurrent_requests = options['max_concurrent_reqs'],
-            n_threads = options['n_threads']
+        b365dapp.down.down.run(
+            options['reqs_per_hour'],
+            options['max_concurrent_reqs'],
+            options['n_threads'],
+            options['update_list_interval'],
+            options['update_fi_interval'],
         )

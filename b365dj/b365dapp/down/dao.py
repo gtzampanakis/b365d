@@ -65,14 +65,9 @@ def save_record(record):
             CurrentEventState.objects.create(**d)
 
 
-def expire_current_states(fis, mod_val, mod_to_keep):
-    to_delete = []
-    for obj in CurrentEventState.objects.all():
-        if int(obj.game_id) % mod_val == mod_to_keep:
-            if obj.game_id not in fis:
-                to_delete.append(obj.game_id)
+def expire_current_states(fis):
     with _LOCK:
-        info = CurrentEventState.objects.filter(game_id__in = to_delete).delete()
+        info = CurrentEventState.objects.exclude(game_id__in = fis).delete()
     if info[0]:
         LOGGER.info('Deleted %s expired current event states', info[0])
 

@@ -50,11 +50,13 @@
 # 41) over odds
 # 42) under odds
 
+import collections
 import datetime
 import decimal
 import json
 import logging
 import os
+import queue
 import threading
 import time
 
@@ -64,10 +66,13 @@ import schedule
 
 import b365dapp.down.dao as dao
 import b365dapp.util as util
+import b365dapp.throttle as throttle
 
 LOGGER = logging.getLogger(__name__)
 
-MAX_SESSION_AGE = 60
+GLOBAL_SLEEP_TIME = .1
+
+MAX_SESSION_AGE = 15 * 60
 
 internal = 'internal'
 from_api = 'from_api'
@@ -141,12 +146,12 @@ BETS_API_TOKEN = os.environ['BETS_API_TOKEN']
 
 EVENT_LIST_URL = (
 	'https://api.betsapi.com/v1/bet365/inplay?token=%s' % (BETS_API_TOKEN))
-
 EVENT_INFO_URL = 'https://api.betsapi.com/v1/bet365/event?token=%s&FI=%s'
 EVENT_STATS_URL = 'https://api.betsapi.com/v1/bet365/event?token=%s&FI=%s&stats=1'
 
 TZ_UTC = pytz.timezone('UTC')
 TZ_LONDON = pytz.timezone('Europe/London')
+
 
 
 def get_event_info_url(fi):
@@ -157,86 +162,27 @@ def get_event_stats_url(fi):
     return EVENT_STATS_URL % (BETS_API_TOKEN, fi)
 
 
-class EventInfo:
-    
-    def __init__(self, evinfolist):
-        self.evinfolist = evinfolist
-
-    def get(self, type, field, first_condition_fn = None):
-        if '->' in type:
-            segments = type.split('->')
-            type_prior = segments[0]
-            type_posterior = segments[1]
-            first_index = -1
-            second_index = -1
-            for obji, obj in enumerate(self.evinfolist):
-                match = False
-                if obj.get('type') == type_prior:
-                    if first_index == -1:
-                        if not first_condition_fn or first_condition_fn(obj):
-                            match = True
-                    else:
-                        match = True
-                if match:
-                    match = False
-                    if first_index == -1:
-                        first_index = obji
-                    elif second_index == -1:
-                        second_index = obji
-                        break
-            if (first_index, second_index) == (-1, -1):
-                return None
-            elif second_index == -1:
-                second_index = obji
-            return EventInfo(self.evinfolist[first_index:second_index]).get(
-                type_posterior, field)
-        else:
-            result = []
-            for obj in self.evinfolist:
-                if obj.get('type') == type:
-                    result.append(obj.get(field)) 
-            if len(result) == 1:
-                return result[0]
-            else:
-                return result
-
-
-class SubsetUpdater:
-    """
-    Only processes a subset of the found events (those with fi % mod_val ==
-    mod_to_keep). Intended to be used in a thread.
-    """
-
-    def __init__(
-        self, throttler, 
-        max_concurrent_requests,
-        mod_to_keep, mod_val,
-        exit_when,
-    ):
-        self.throttler = throttler
-        self.mod_to_keep = mod_to_keep
-        self.mod_val = mod_val
-        self.max_concurrent_requests = max_concurrent_requests
-        self.request_semaphore = threading.Semaphore(max_concurrent_requests)
-        self.exit_when = exit_when
-        self.session = None
-
+class HTTPCaller:
+    def __init__(self, max_concurrent_reqs, rph):
+        self.throttler = throttle.Throttler(rph)
+        self.request_semaphore = threading.Semaphore(max_concurrent_reqs)
         self.timeout = (30., 30.)
-    
+        self.thrloc = threading.local()
+
     def get_session(self):
-        if self.session is None:
-            self.session = requests.Session()
+        if getattr(self.thrloc, 'session', None) is None:
+            self.thrloc.session = requests.Session()
             self.session_t0 = time.time()
-            return self.session
+            return self.thrloc.session
         else:
             if time.time() - self.session_t0 > MAX_SESSION_AGE:
                 LOGGER.debug('Replacing session because it reached its max age')
-                if self.session is not None:
-                    self.session.close()
-                self.session = None
+                if self.thrloc.session is not None:
+                    self.thrloc.session.close()
+                self.thrloc.session = None
                 return self.get_session()
             else:
-                return self.session
+                return self.thrloc.session
 
     def call_via_throttler(self, *args, **kwargs):
         with self.request_semaphore:
@@ -269,7 +215,113 @@ class SubsetUpdater:
         assert j['success'] == 1
         return EventInfo(j['results'][0])
 
-    def get_match_time(self, da_ps, event_info, update_at):
+class EventListUpdater:
+    def __init__(self, exit_when, http_caller, update_list_interval):
+        self.exit_when = exit_when
+        self.http_caller = http_caller
+        self.update_list_interval = update_list_interval
+        self.t_last_call = 0.
+        self.fis_time = (set(), 0)
+
+    @staticmethod
+    def event_list_to_fis(event_list):
+        fis = []
+        current_sport = None
+        for obj in event_list:
+            if obj['type'] == 'CL':
+                current_sport = obj['ID']
+
+            if current_sport == '1': # The code for Soccer is 1
+                if obj['type'] == 'EV':
+                    if 'FI' in obj:
+                        fi = obj['FI']
+                        fis.append(fi)
+        return fis
+
+    def expire_current_states(self, fis):
+        dao.expire_current_states(fis)
+
+    def run_cycle(self):
+        event_list = self.http_caller.get_event_list()
+        fis = self.event_list_to_fis(event_list)
+        self.expire_current_states(fis)
+        self.fis_time = (set(fis), time.time())
+
+    def run(self):
+        while not self.exit_when.is_set():
+            if time.time() - self.t_last_call > self.update_list_interval:
+                self.t_last_call = time.time()
+                try:
+                    self.run_cycle()
+                except Exception as e:
+                    LOGGER.exception(e)
+            else:
+                time.sleep(GLOBAL_SLEEP_TIME)
+        
+class FisDistributor:
+    def __init__(
+        self, exit_when, http_caller,
+        event_list_updater, update_fi_interval,
+    ):
+        self.exit_when = exit_when
+        self.http_caller = http_caller
+        self.event_list_updater = event_list_updater
+        self.update_fi_interval = update_fi_interval
+        self.fi_to_time = {}
+        self.last_time_used = -1
+        self.message_queue = queue.Queue(1)
+        self.stale_after = 15 * 60
+    
+    def send_update_message(self, fi):
+        item = {
+            'type': 'update',
+            'fi': fi,
+        }
+        LOGGER.info('Received update message for fi %s', fi)
+# Using timeout so we can keep checking the exit_when flag.
+        timeout = .5
+        while not self.exit_when.is_set():
+            try:
+                self.message_queue.put(item, timeout=timeout)
+                return
+            except queue.Full:
+                time.sleep(GLOBAL_SLEEP_TIME)
+
+    def run(self):
+        while not self.exit_when.is_set():
+            fis, time_ = self.event_list_updater.fis_time
+
+            fis_to_delete = [ fi for fi in self.fi_to_time if fi not in fis ]
+            for fi in fis_to_delete:
+                del self.fi_to_time[fi]
+
+            if time_ > time.time() - self.stale_after:
+                if time_ > self.last_time_used:
+                    for fi in fis:
+                        if fi not in self.fi_to_time:
+                            self.fi_to_time[fi] = 0.
+                    self.last_time_used = time_
+                
+                for fi in self.fi_to_time:
+                    if self.exit_when.is_set():
+                        break
+                    if time.time() - self.fi_to_time[fi] > self.update_fi_interval:
+                        self.send_update_message(fi)
+                        self.fi_to_time[fi] = time.time()
+            else:
+                LOGGER.warning('Received stale fis, ignored them.')
+
+            time.sleep(GLOBAL_SLEEP_TIME)
+
+class FisUpdater:
+    
+    def __init__(self, exit_when, http_caller, fis_distributor):
+        self.exit_when = exit_when
+        self.http_caller = http_caller
+        self.fis_distributor = fis_distributor
+    
+    @staticmethod
+    def get_match_time(da_ps, event_info, update_at):
         # if (TT)
         # secs = now - TU(convert into unix epoch) + TM * 60 + TS
         # }else {
@@ -296,13 +348,13 @@ class SubsetUpdater:
 
         return seconds / 60, seconds % 60
 
-    def handle_event_info(self, event_info, event_stats, update_at):
+    def handle_event_info(self, fi, event_info, event_stats, update_at):
         d = {from_api: {}, internal: {}}
         di = d[internal]
         da = d[from_api]
         
-        assert self.fi is not None
-        da[game_id] = self.fi
+        assert fi is not None
+        da[game_id] = fi
 
         da[ps] = util.safe_apply(
             event_info.get('EV', 'TU'),
@@ -319,8 +371,8 @@ class SubsetUpdater:
             match_time = self.get_match_time(da[ps], event_info, update_at)
             da[mm] = match_time[0]
             da[ms] = match_time[1]
-        except Exception:
-            pass
+        except Exception as e:
+            LOGGER.exception(e)
 
         for k,i in zip([chg, cag], [0,1]):
             da[k] = util.safe_apply(
@@ -462,32 +514,11 @@ class SubsetUpdater:
                     float)
         # End stats.
 
-        self.sanity_check_for_record(d)
+        self.sanity_check_for_record(d, event_info)
         dao.save_record(d)
 
-
-    def expire_current_states(self, event_list):
-        dao.expire_current_states(
-            self.event_list_to_fis(event_list), self.mod_val, self.mod_to_keep)
-
-
-    def event_list_to_fis(self, event_list):
-        fis = []
-        current_sport = None
-        for obj in event_list:
-            if obj['type'] == 'CL':
-                current_sport = obj['ID']
-
-            if current_sport == '1': # The code for Soccer is 1
-                if obj['type'] == 'EV':
-                    if 'FI' in obj:
-                        fi = obj['FI']
-                        if int(fi) % self.mod_val == self.mod_to_keep:
-                            fis.append(fi)
-        return fis
-
     
-    def sanity_check_for_record(self, record):
+    def sanity_check_for_record(self, record, event_info):
         record = record['from_api']
 
         if (
@@ -501,7 +532,7 @@ class SubsetUpdater:
             LOGGER.warning(
                 'Found record with hah > ah: %s > %s '
                 'derived from data: %s',
-                record[hah], record[ah], self.event_info.evinfolist)
+                record[hah], record[ah], event_info.evinfolist)
 
         if (
                 record[tl] is not None
@@ -514,44 +545,79 @@ class SubsetUpdater:
             LOGGER.warning(
                 'Found record with htl > tl: %s > %s '
                 'derived from data: %s',
-                record[htl], record[tl], self.event_info.evinfolist)
-
-
-    def run_cycle(self):
+                record[htl], record[tl], event_info.evinfolist)
+    
+    def run_for_fi(self, fi):
         if self.exit_when.is_set():
             return
-        LOGGER.info('New cycle from thread %s/%s', self.mod_to_keep, self.mod_val)
-        event_list = self.get_event_list()
-        fis = self.event_list_to_fis(event_list)
-        self.expire_current_states(event_list)
-        for fi in fis:
+        event_info, update_at = self.http_caller.get_event_info(fi)
+        try:
             if self.exit_when.is_set():
                 return
-            try:
-                self.fi = fi
-                try:
-                    event_info, update_at = self.get_event_info(fi)
-                    self.event_info = event_info
-                except Exception as e:
-                    LOGGER.exception(e)
-                    continue
-                try:
-                    event_stats = self.get_event_stats(fi)
-                except Exception as e:
-                    LOGGER.exception(e)
-                    event_stats = None
-                self.handle_event_info(event_info, event_stats, update_at)
-            except Exception as e:
-                LOGGER.exception(e)
-            finally:
-                self.fi = None
+            event_stats = self.http_caller.get_event_stats(fi)
+        except Exception as e:
+            LOGGER.exception(e)
+            event_stats = None
+        self.handle_event_info(fi, event_info, event_stats, update_at)
 
     def run(self):
+# Using timeout so we can keep checking the exit_when flag.
+        timeout = .5
         while not self.exit_when.is_set():
             try:
-                self.run_cycle()
-            except Exception as e:
-                LOGGER.exception(e)
+                item = self.fis_distributor.message_queue.get(timeout=timeout)
+                assert item['type'] == 'update'
+                fi = item['fi']
+                try:
+                    self.run_for_fi(fi)
+                except Exception as e:
+                    LOGGER.exception(e)
+            except queue.Empty:
+                time.sleep(GLOBAL_SLEEP_TIME)
+
+class EventInfo:
+    
+    def __init__(self, evinfolist):
+        self.evinfolist = evinfolist
+
+    def get(self, type, field, first_condition_fn = None):
+        if '->' in type:
+            segments = type.split('->')
+            type_prior = segments[0]
+            type_posterior = segments[1]
+            first_index = -1
+            second_index = -1
+            for obji, obj in enumerate(self.evinfolist):
+                match = False
+                if obj.get('type') == type_prior:
+                    if first_index == -1:
+                        if not first_condition_fn or first_condition_fn(obj):
+                            match = True
+                    else:
+                        match = True
+                if match:
+                    match = False
+                    if first_index == -1:
+                        first_index = obji
+                    elif second_index == -1:
+                        second_index = obji
+                        break
+            if (first_index, second_index) == (-1, -1):
+                return None
+            elif second_index == -1:
+                second_index = obji
+            return EventInfo(self.evinfolist[first_index:second_index]).get(
+                type_posterior, field)
+        else:
+            result = []
+            for obj in self.evinfolist:
+                if obj.get('type') == type:
+                    result.append(obj.get(field)) 
+            if len(result) == 1:
+                return result[0]
+            else:
+                return result
+
 
 class Scheduler:
     def __init__(self, exit_when):
@@ -563,57 +629,70 @@ class Scheduler:
 
         while not self.exit_when.is_set():
             schedule.run_pending()
-            time.sleep(.1)
+            time.sleep(GLOBAL_SLEEP_TIME)
 
-def run_parallel(throttler, max_concurrent_requests, n_threads):
-    worker_threads = []
+def run(
+    reqs_per_hour, max_concurrent_reqs, n_threads,
+    update_list_interval, update_fi_interval
+):
     exit_when = threading.Event()
 
-    try:
-        for mod_to_keep in range(n_threads):
-            subset_updater = SubsetUpdater(
-                throttler = throttler,
-                max_concurrent_requests = max_concurrent_requests,
-                mod_to_keep = mod_to_keep,
-                mod_val = n_threads,
-                exit_when = exit_when,
-            )
-            thread = threading.Thread(
-                target = subset_updater.run,
-                name = 'subset_updater %s/%s' % (mod_to_keep, n_threads),
-            )
-            worker_threads.append(thread)
+    http_caller = HTTPCaller(max_concurrent_reqs, reqs_per_hour)
 
-        for thread in worker_threads:
+    event_list_updater = EventListUpdater(
+        exit_when, http_caller, update_list_interval)
+    event_list_updater_thread = threading.Thread(
+        target = event_list_updater.run,
+        name = 'event_list_updater'
+    )
+
+    fis_distributor = FisDistributor(
+        exit_when, http_caller, event_list_updater, update_fi_interval)
+    fis_distributor_thread = threading.Thread(
+        target = fis_distributor.run,
+        name = 'fis_distributor'
+    )
+
+    all_threads = [
+        event_list_updater_thread,
+        fis_distributor_thread,
+    ]
+
+    for workeri in range(n_threads):
+        worker = FisUpdater(exit_when, http_caller, fis_distributor)
+        worker_thread = threading.Thread(
+            target = worker.run,
+            name = 'fis_updater %s/%s' % (workeri+1, n_threads)
+        )
+        all_threads.append(worker_thread)
+
+    scheduler = Scheduler(exit_when)
+    scheduler_thread = threading.Thread(
+        target = scheduler.run,
+        name = 'scheduler',
+    )
+    all_threads.append(scheduler_thread)
+
+    try:
+        for thread in all_threads:
             thread.start()
 
-        scheduler = Scheduler(exit_when)
-        scheduler_thread = threading.Thread(
-            target = scheduler.run,
-            name = 'scheduler',
-        )
-        scheduler_thread.start()
-
-        all_threads = worker_threads + [scheduler_thread]
-
-# If any of the worker threads stops, exit the whole program. Worker threads
-# are designed not to stop. If one stops it means there was an unexpected
-# error.
-        done = False
-        while not done:
-            for thread in all_threads:
-                thread.join(.1)
-                if not thread.is_alive():
-                    LOGGER.warning(
-                        'Exiting because thread %s is not alive anymore' % thread)
-                    done = True
+        while True:
+            non_alive_thread = None
+            for t in all_threads:
+                if not t.is_alive():
+                    non_alive_thread = t
                     break
+            if non_alive_thread:
+                LOGGER.error('Thread is not alive: %s', non_alive_thread)
+                break
+            time.sleep(GLOBAL_SLEEP_TIME)
 
     finally:
+        LOGGER.info('Set the exit_when flag.')
         exit_when.set()
-        LOGGER.warning('Set exit_when to true')
 
         for thread in all_threads:
-            LOGGER.warning('Joining thread %s...', thread)
             thread.join()
-            LOGGER.warning('Successfully joined thread %s', thread)
+
+
