@@ -269,7 +269,7 @@ class FisDistributor:
         self.update_fi_interval = update_fi_interval
         self.fi_to_time = {}
         self.last_time_used = -1
-        self.message_queue = queue.Queue(1)
+        self.message_queue = queue.Queue(10 * 1000)
         self.stale_after = 15 * 60
     
     def send_update_message(self, fi):
