@@ -4,7 +4,7 @@ chardet==3.0.4
 cheroot==6.5.2
 CherryPy==18.0.0
 contextlib2==0.5.5
-Django==1.11.12
+Django==1.11.15
 idna==2.6
 jaraco.functools==1.20
 more-itertools==4.3.0
