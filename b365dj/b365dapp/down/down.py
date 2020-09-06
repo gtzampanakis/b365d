@@ -190,7 +190,7 @@ class HTTPCaller:
 
     def get_event_list(self):
         url = EVENT_LIST_URL
-        LOGGER.info('Calling URL: %s', url)
+        LOGGER.info('Calling event_list URL: %s', url)
         response = self.call_via_throttler(self.get_session().get, url, timeout=self.timeout)
         assert response.status_code == 200, response.status_code
         j = response.json()
@@ -199,7 +199,7 @@ class HTTPCaller:
 
     def get_event_info(self, fi):
         url = get_event_info_url(fi)
-        LOGGER.info('Calling URL: %s', url)
+        LOGGER.info('Calling get_event_info URL: %s', url)
         response = self.call_via_throttler(self.get_session().get, url, timeout=self.timeout)
         assert response.status_code == 200, response.status_code
         j = response.json()
@@ -208,7 +208,7 @@ class HTTPCaller:
 
     def get_event_stats(self, fi):
         url = get_event_stats_url(fi)
-        LOGGER.info('Calling URL: %s', url)
+        LOGGER.info('Calling get_event_stats URL: %s', url)
         response = self.call_via_throttler(self.get_session().get, url, timeout=self.timeout)
         assert response.status_code == 200, response.status_code
         j = response.json()
@@ -233,8 +233,14 @@ class EventListUpdater:
 
             if current_sport == '1': # The code for Soccer is 1
                 if obj['type'] == 'EV':
-                    if 'FI' in obj:
-                        fi = obj['FI']
+# We used the 'FI' key here prior to 2020-09. Then the 'FI' key was removed and
+# an email to betsapi.com support revealed that we should use the 'ID' key from
+# then on, even though the 'FI' key is still used in other places and the 'FI'
+# key still appears in the query parameters of the URLs (even though we now
+# need to pass the value of the 'ID' field in those query parameters and if the
+# value of the 'FI' key is passed we get "invalid parameter" error).
+                    if 'ID' in obj:
+                        fi = obj['ID']
                         fis.append(fi)
         return fis
 
@@ -327,9 +333,9 @@ class FisUpdater:
         # }else {
         #     secs = TM*60 + TS
         # }
-        TT = event_info.get('EV', 'TT')
-        TM = event_info.get('EV', 'TM')
-        TS = event_info.get('EV', 'TS')
+        TT = event_info.find('EV', 'TT')
+        TM = event_info.find('EV', 'TM')
+        TS = event_info.find('EV', 'TS')
 
         if not TT or not TM or not TS or not da_ps:
             return None
@@ -357,7 +363,7 @@ class FisUpdater:
         da[game_id] = fi
 
         da[ps] = util.safe_apply(
-            event_info.get('EV', 'TU'),
+            event_info.find('EV', 'TU'),
             lambda o: datetime.datetime(
                 int(o[0:4]),
                 int(o[4:6]),
@@ -376,75 +382,83 @@ class FisUpdater:
 
         for k,i in zip([chg, cag], [0,1]):
             da[k] = util.safe_apply(
-                event_info.get('EV', 'SS'),
+                event_info.find('EV', 'SS'),
                 lambda o: o.split('-'),
                 lambda o: o[i])
 
-        da[league] = event_info.get('EV', 'CT')
+        da[league] = event_info.find('EV', 'CT')
 
 # This appears to be the best way to get the team names. Initially I found them
 # in the Fulltime Result odds but then I found that those odds are not always
 # available.
-        segments = event_info.get('EV', 'NA').split(' v ')
+        segments = event_info.find('EV', 'NA').split(' v ')
         da[home] = segments[0]
         da[away] = segments[1]
         
         da[ah] = util.safe_apply(
-            event_info.get('MA->PA', 'HA',
-                           lambda o: o['NA'].startswith('Asian Handicap')),
+# event_info.find in human language: Find the subset S of the eventinfo list
+# that lies between two objects with type = MG. S's first element should
+# additionally fulfill the lambda given. For each element of S with type = PA
+# obtain the value of the key HA. Store all those values in the list R and
+# return R.
+            event_info.find('MG->PA', 'HA',
+# We used to have o['NA'] here but from 2020-09 we changed it to o.get('NA', '')
+# because some objects no longer had the 'NA' key. See also many other
+# cases in this file.
+                       lambda o: o.get('NA', '').startswith('Asian Handicap')),
             lambda l: l[0],
             float)
 
         for k,i in zip([ahho, ahao], [0, 1]):
             da[k] = util.safe_apply(
-                event_info.get('MA->PA', 'OD',
-                               lambda o: o['NA'].startswith('Asian Handicap')),
+                event_info.find('MA->PA', 'OD',
+                           lambda o: o.get('NA', '').startswith('Asian Handicap')),
                 lambda l: l[i],
                 util.frac_to_dec)
 
         da[hah] = util.safe_apply(
-            event_info.get('MA->PA', 'HA',
-                           lambda o: o['NA'].startswith('1st Half Asian Handicap')),
+            event_info.find('MA->PA', 'HA',
+                   lambda o: o.get('NA', '').startswith('1st Half Asian Handicap')),
             lambda l: l[0],
             float)
 
         for k,i in zip([hahh, haha], [0, 1]):
             da[k] = util.safe_apply(
-                event_info.get('MA->PA', 'OD',
-                               lambda o: o['NA'].startswith('1st Half Asian Handicap')),
+                event_info.find('MA->PA', 'OD',
+                   lambda o: o.get('NA', '').startswith('1st Half Asian Handicap')),
                 lambda l: l[i],
                 util.frac_to_dec)
 
         for k,i in zip([tlo, tlu], [0, 1]):
             da[k] = util.safe_apply(
-                event_info.get('MA->PA', 'OD',
-                               lambda o: o['NA'] == 'Match Goals'),
+                event_info.find('MA->PA', 'OD',
+                               lambda o: o.get('NA', '') == 'Match Goals'),
                 lambda l: l[i],
                 util.frac_to_dec)
 
         da[tl] = util.safe_apply(
-            event_info.get('MA->PA', 'HA',
-                           lambda o: o['NA'].startswith('Goal Line')),
+            event_info.find('MA->PA', 'HA',
+                           lambda o: o.get('NA', '').startswith('Goal Line')),
             lambda l: l[0],
             float)
 
         for k,i in zip([tlo, tlu], [0, 1]):
             da[k] = util.safe_apply(
-                event_info.get('MA->PA', 'OD',
-                               lambda o: o['NA'].startswith('Goal Line')),
+                event_info.find('MA->PA', 'OD',
+                               lambda o: o.get('NA', '').startswith('Goal Line')),
                 lambda l: l[i],
                 util.frac_to_dec)
 
         da[htl] = util.safe_apply(
-            event_info.get('MA->PA', 'HA',
-                           lambda o: o['NA'].startswith('1st Half Goal Line')),
+            event_info.find('MA->PA', 'HA',
+                       lambda o: o.get('NA', '').startswith('1st Half Goal Line')),
             lambda l: l[0],
             float)
 
         for k,i in zip([htlo, htlu], [0, 1]):
             da[k] = util.safe_apply(
-                event_info.get('MA->PA', 'OD',
-                               lambda o: o['NA'].startswith('1st Half Goal Line')),
+                event_info.find('MA->PA', 'OD',
+                       lambda o: o.get('NA', '').startswith('1st Half Goal Line')),
                 lambda l: l[i],
                 util.frac_to_dec)
 
@@ -453,63 +467,63 @@ class FisUpdater:
             desc_to_field = {}
             for suffix in range(1, 8):
                 field = 'S' + str(suffix)
-                value = event_stats.get('EV', field)
+                value = event_stats.find('EV', field)
                 if value in STATS_DESCS:
                     desc_to_field[value] = field
             
             if ATTACKS in desc_to_field:
                 for k,i in zip([atth, atta], [0, 1]):
                     da[k] = util.safe_apply(
-                        event_stats.get('EV->TE', desc_to_field[ATTACKS]),
+                        event_stats.find('EV->TE', desc_to_field[ATTACKS]),
                         lambda l: l[i],
                         float)
 
             if DANGEROUS_ATTACKS in desc_to_field:
                 for k,i in zip([datth, datta], [0, 1]):
                     da[k] = util.safe_apply(
-                        event_stats.get('EV->TE', desc_to_field[DANGEROUS_ATTACKS]),
+                        event_stats.find('EV->TE', desc_to_field[DANGEROUS_ATTACKS]),
                         lambda l: l[i],
                         float)
 
             if POSSESSION in desc_to_field:
                 for k,i in zip([ph, pa], [0, 1]):
                     da[k] = util.safe_apply(
-                        event_stats.get('EV->TE', desc_to_field[POSSESSION]),
+                        event_stats.find('EV->TE', desc_to_field[POSSESSION]),
                         lambda l: l[i],
                         float)
 
             if ON_TARGET in desc_to_field:
                 for k,i in zip([shnh, shna], [0, 1]):
                     da[k] = util.safe_apply(
-                        event_stats.get('EV->TE', desc_to_field[ON_TARGET]),
+                        event_stats.find('EV->TE', desc_to_field[ON_TARGET]),
                         lambda l: l[i],
                         float)
 
             if OFF_TARGET in desc_to_field:
                 for k,i in zip([shoh, shoa], [0, 1]):
                     da[k] = util.safe_apply(
-                        event_stats.get('EV->TE', desc_to_field[OFF_TARGET]),
+                        event_stats.find('EV->TE', desc_to_field[OFF_TARGET]),
                         lambda l: l[i],
                         float)
 
             for k,i in zip([ch, ca], [0, 1]):
                 da[k] = util.safe_apply(
-                    event_stats.get('SC->SL', 'D1',
-                        lambda o: o['NA'] == 'ICorner'),
+                    event_stats.find('SC->SL', 'D1',
+                        lambda o: o.get('NA', '') == 'ICorner'),
                     lambda l: l[i],
                     float)
 
             for k,i in zip([ych, yca], [0, 1]):
                 da[k] = util.safe_apply(
-                    event_stats.get('SC->SL', 'D1',
-                        lambda o: o['NA'] == 'IYellowCard'),
+                    event_stats.find('SC->SL', 'D1',
+                        lambda o: o.get('NA', '') == 'IYellowCard'),
                     lambda l: l[i],
                     float)
 
             for k,i in zip([rch, rca], [0, 1]):
                 da[k] = util.safe_apply(
-                    event_stats.get('SC->SL', 'D1',
-                        lambda o: o['NA'] == 'IRedCard'),
+                    event_stats.find('SC->SL', 'D1',
+                        lambda o: o.get('NA', '') == 'IRedCard'),
                     lambda l: l[i],
                     float)
         # End stats.
@@ -580,7 +594,7 @@ class EventInfo:
     def __init__(self, evinfolist):
         self.evinfolist = evinfolist
 
-    def get(self, type, field, first_condition_fn = None):
+    def find(self, type, field, first_condition_fn = None):
         if '->' in type:
             segments = type.split('->')
             type_prior = segments[0]
@@ -606,7 +620,7 @@ class EventInfo:
                 return None
             elif second_index == -1:
                 second_index = obji
-            return EventInfo(self.evinfolist[first_index:second_index]).get(
+            return EventInfo(self.evinfolist[first_index:second_index]).find(
                 type_posterior, field)
         else:
             result = []
