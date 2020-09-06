@@ -283,7 +283,6 @@ class FisDistributor:
             'type': 'update',
             'fi': fi,
         }
-        LOGGER.info('Received update message for fi %s', fi)
 # Using timeout so we can keep checking the exit_when flag.
         timeout = .5
         while not self.exit_when.is_set():
