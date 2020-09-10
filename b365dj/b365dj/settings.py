@@ -138,7 +138,7 @@ LOGGING = {
     'disable_existing_loggers': False,
     'handlers': {
         'console': {
-            'level': 'INFO',
+            'level': 'INFO', # Set to DEBUG to (among else) log all queries.
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
         },
@@ -149,6 +149,10 @@ LOGGING = {
             'level': 'NOTSET',
             'propagate': True,
         },
+# Uncomment to log all queries.
+        # 'django.db.backends': {
+        #     'level': 'DEBUG',
+        # },
     },
     'formatters': {
         'verbose': {

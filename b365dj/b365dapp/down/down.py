@@ -57,8 +57,10 @@ import json
 import logging
 import os
 import queue
+import re
 import threading
 import time
+from pprint import pprint
 
 import pytz
 import requests
@@ -162,6 +164,111 @@ def get_event_stats_url(fi):
     return EVENT_STATS_URL % (BETS_API_TOKEN, fi)
 
 
+def combine(odds_list):
+    """
+    Input example:
+
+    [{'current_mg_na': 'Match Goals',
+      'handicap': None,
+      'odds': None,
+      'selection': ' '},
+     {'current_mg_na': 'Match Goals',
+      'handicap': '1.5',
+      'odds': 1.6153846153846154,
+      'selection': 'Over'},
+     {'current_mg_na': 'Match Goals',
+      'handicap': '1.5',
+      'odds': 2.2,
+      'selection': 'Under'},
+     {'current_mg_na': 'Asian Handicap (0-0)',
+      'handicap': '0',
+      'odds': 1.8,
+      'selection': 'Barcelona (Jkey) Esports'},
+     {'current_mg_na': 'Asian Handicap (0-0)',
+      'handicap': '0',
+      'odds': 1.9,
+      'selection': 'Sevilla (Kodak) Esports'},
+     {'current_mg_na': 'Goal Line (0-0)',
+      'handicap': None,
+      'odds': None,
+      'selection': ' '},
+     {'current_mg_na': 'Goal Line (0-0)',
+      'handicap': '1.75',
+      'odds': 1.8,
+      'selection': 'Over'},
+     {'current_mg_na': 'Goal Line (0-0)',
+      'handicap': '1.75',
+      'odds': 1.9,
+      'selection': 'Under'},
+
+      Output example:
+        [('ah',
+          ('WestCoastUTD (WCU) Esports',
+           '0',
+           1.625,
+           'Kabush (KAB) Esports',
+           '0',
+           2.15)),
+         ('hah', None),
+         ('gl', ('Over', '4.5', 1.775, 'Under', '4.5', 1.925)),
+         ('hgl', None)]
+    """
+    result = []
+    for key, category_fn, is_asian in [
+        ('ah',
+            lambda o: o['current_mg_na'].startswith('Asian Handicap ('), True),
+        ('hah',
+            lambda o: o['current_mg_na'].startswith('1st Half Asian Handicap ('), True),
+        ('gl',
+            lambda o: o['current_mg_na'].startswith('Goal Line ('), False),
+        ('hgl',
+            lambda o: o['current_mg_na'].startswith('1st Half Goal Line ('), False),
+    ]:
+        min_diff = float('inf')
+        min_diff_achiever = None
+        for i in range(len(odds_list)):
+            obja = odds_list[i]
+            if category_fn(obja):
+                sela = obja['selection']
+                oddsa = obja['odds']
+                for j in range(i+1, len(odds_list)):
+                    objb = odds_list[j]
+                    if (
+                        obja['current_mg_na'] == objb['current_mg_na']
+                            and
+                        obja['selection'] != objb['selection']
+                            and
+                        (
+                                is_asian and (
+                                        obja['handicap'] == '0'
+                                    and objb['handicap'] == '0'
+                                        or
+                                        obja['handicap'].startswith('-')
+                                    and objb['handicap']
+                                            == obja['handicap'].replace('-', '+')
+                                        or
+                                        obja['handicap'].startswith('+')
+                                    and objb['handicap']
+                                            == obja['handicap'].replace('+', '-')
+                                )
+                                or not is_asian and (
+                                    obja['handicap'] == objb['handicap']
+                                )
+                        )
+                    ):
+                        selb = objb['selection']
+                        oddsb = objb['odds']
+                        diff = abs(oddsa - oddsb)
+                        if diff < min_diff:
+                            min_diff = diff
+                            min_diff_achiever = (
+                                sela, obja['handicap'], oddsa,
+                                selb, objb['handicap'], oddsb,
+                            )
+        result.append((key, min_diff_achiever))
+    return result
+
+
 class HTTPCaller:
     def __init__(self, max_concurrent_reqs, rph):
         self.throttler = throttle.Throttler(rph)
@@ -240,7 +347,9 @@ class EventListUpdater:
 # need to pass the value of the 'ID' field in those query parameters and if the
 # value of the 'FI' key is passed we get "invalid parameter" error).
                     if 'ID' in obj:
-                        fi = obj['ID']
+# Keep only the first 8 characters. Looks like betsapi adds some garbage after
+# that point and the garbage changes from call to call.
+                        fi = obj['ID'][:8]
                         fis.append(fi)
         return fis
 
@@ -393,73 +502,45 @@ class FisUpdater:
         segments = event_info.find('EV', 'NA').split(' v ')
         da[home] = segments[0]
         da[away] = segments[1]
-        
-        da[ah] = util.safe_apply(
-# event_info.find in human language: Find the subset S of the eventinfo list
-# that lies between two objects with type = MG. S's first element should
-# additionally fulfill the lambda given. For each element of S with type = PA
-# obtain the value of the key HA. Store all those values in the list R and
-# return R.
-            event_info.find('MG->PA', 'HA',
-# We used to have o['NA'] here but from 2020-09 we changed it to o.get('NA', '')
-# because some objects no longer had the 'NA' key. See also many other
-# cases in this file.
-                       lambda o: o.get('NA', '').startswith('Asian Handicap')),
-            lambda l: l[0],
-            float)
 
-        for k,i in zip([ahho, ahao], [0, 1]):
-            da[k] = util.safe_apply(
-                event_info.find('MA->PA', 'OD',
-                           lambda o: o.get('NA', '').startswith('Asian Handicap')),
-                lambda l: l[i],
-                util.frac_to_dec)
+        all_odds = event_info.get_odds()
+        combined = combine(all_odds)
 
-        da[hah] = util.safe_apply(
-            event_info.find('MA->PA', 'HA',
-                   lambda o: o.get('NA', '').startswith('1st Half Asian Handicap')),
-            lambda l: l[0],
-            float)
+        # Set them all to None in order to play nicely with
+        # sanity_check_for_record().
+        da[ah] = None
+        da[ahho] = None
+        da[ahao] = None
+        da[hah] = None
+        da[hahh] = None
+        da[haha] = None
+        da[tl] = None
+        da[tlo] = None
+        da[tlu] = None
+        da[htl] = None
+        da[htlo] = None
+        da[htlu] = None
 
-        for k,i in zip([hahh, haha], [0, 1]):
-            da[k] = util.safe_apply(
-                event_info.find('MA->PA', 'OD',
-                   lambda o: o.get('NA', '').startswith('1st Half Asian Handicap')),
-                lambda l: l[i],
-                util.frac_to_dec)
-
-        for k,i in zip([tlo, tlu], [0, 1]):
-            da[k] = util.safe_apply(
-                event_info.find('MA->PA', 'OD',
-                               lambda o: o.get('NA', '') == 'Match Goals'),
-                lambda l: l[i],
-                util.frac_to_dec)
-
-        da[tl] = util.safe_apply(
-            event_info.find('MA->PA', 'HA',
-                           lambda o: o.get('NA', '').startswith('Goal Line')),
-            lambda l: l[0],
-            float)
-
-        for k,i in zip([tlo, tlu], [0, 1]):
-            da[k] = util.safe_apply(
-                event_info.find('MA->PA', 'OD',
-                               lambda o: o.get('NA', '').startswith('Goal Line')),
-                lambda l: l[i],
-                util.frac_to_dec)
-
-        da[htl] = util.safe_apply(
-            event_info.find('MA->PA', 'HA',
-                       lambda o: o.get('NA', '').startswith('1st Half Goal Line')),
-            lambda l: l[0],
-            float)
-
-        for k,i in zip([htlo, htlu], [0, 1]):
-            da[k] = util.safe_apply(
-                event_info.find('MA->PA', 'OD',
-                       lambda o: o.get('NA', '').startswith('1st Half Goal Line')),
-                lambda l: l[i],
-                util.frac_to_dec)
+        for key, odds_tuple in combined:
+            if odds_tuple is None:
+                continue
+            sela, handa, oddsa, selb, handb, oddsb = odds_tuple
+            if key == 'ah':
+                da[ah] = float(handa)
+                da[ahho] = oddsa
+                da[ahao] = oddsb
+            elif key == 'hah':
+                da[hah] = float(handa)
+                da[hahh] = oddsa
+                da[haha] = oddsb
+            elif key == 'gl':
+                da[tl] = float(handa)
+                da[tlo] = oddsa if sela == 'Over' else oddsb
+                da[tlu] = oddsa if sela == 'Under' else oddsb
+            elif key == 'hgl':
+                da[htl] = float(handa)
+                da[htlo] = oddsa if sela == 'Over' else oddsb
+                da[htlu] = oddsa if sela == 'Under' else oddsb
 
         # Start stats.
         if event_stats is not None:
@@ -543,9 +624,8 @@ class FisUpdater:
             )
         ):
             LOGGER.warning(
-                'Found record with hah > ah: %s > %s '
-                'derived from data: %s',
-                record[hah], record[ah], event_info.evinfolist)
+                'Found record with hah > ah: %s > %s',
+                record[hah], record[ah])
 
         if (
                 record[tl] is not None
@@ -556,9 +636,8 @@ class FisUpdater:
             )
         ):
             LOGGER.warning(
-                'Found record with htl > tl: %s > %s '
-                'derived from data: %s',
-                record[htl], record[tl], event_info.evinfolist)
+                'Found record with htl > tl: %s > %s',
+                record[htl], record[tl])
     
     def run_for_fi(self, fi):
         if self.exit_when.is_set():
@@ -592,6 +671,24 @@ class EventInfo:
     
     def __init__(self, evinfolist):
         self.evinfolist = evinfolist
+    
+    def get_odds(self):
+        results = []
+        current_mg_na = None
+        current_selection = None
+        for obji, obj in enumerate(self.evinfolist):
+            if obj.get('type') == 'MG':
+                current_mg_na = obj.get('NA')
+            if obj.get('type') == 'MA':
+                current_selection = obj.get('NA') and obj.get('NA').strip()
+            if current_mg_na and current_selection and obj.get('type') == 'PA':
+                results.append({
+                    'current_mg_na': current_mg_na,
+                    'selection': current_selection,
+                    'handicap': obj.get('HA'),
+                    'odds': obj.get('OD') and util.frac_to_dec(obj.get('OD')),
+                })
+        return results
 
     def find(self, type, field, first_condition_fn = None):
         if '->' in type:
@@ -624,8 +721,11 @@ class EventInfo:
         else:
             result = []
             for obj in self.evinfolist:
-                if obj.get('type') == type:
-                    result.append(obj.get(field)) 
+                if type == '*' or obj.get('type') == type:
+                    if field is not None:
+                        result.append(obj.get(field)) 
+                    else:
+                        result.append(obj)
             if len(result) == 1:
                 return result[0]
             else:

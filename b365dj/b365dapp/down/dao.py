@@ -3,6 +3,8 @@ import threading
 import logging
 
 from django.db import transaction, connection
+from django.db.models import Q
+from django.utils import timezone
 
 from b365dapp.models import (
     EventState, CurrentEventState)
@@ -67,9 +69,15 @@ def save_record(record):
 
 def expire_current_states(fis):
     with _LOCK:
-        info = CurrentEventState.objects.exclude(game_id__in = fis).delete()
-    if info[0]:
-        LOGGER.info('Deleted %s expired current event states', info[0])
+        info = CurrentEventState.objects.exclude(
+# As of 2020-09-09 sometimes two successive calls to the event list URL will
+# give different lists. This appears to be a bug on betsapi.com. To work around
+# it we will filter out CurrentEventState records that have been updated
+# recently.
+            Q(game_id__in = fis)
+                |
+            Q(created_at__gt = timezone.now() - datetime.timedelta(minutes=5))
+        ).delete()
 
 def vacuum():
     try:
@@ -86,7 +94,7 @@ def trim_data():
         LOGGER.info('trim_data: start')
         with _LOCK:
             info = EventState.objects.filter(
-                created_at__lt = datetime.datetime.now() - datetime.timedelta(days=7)
+                created_at__lt = timezone.now() - datetime.timedelta(days=7)
             ).delete()
         if info[0]:
             LOGGER.info('Deleted %s old event states', info[0])

@@ -76,6 +76,6 @@ class EventState(EventStateBase):
 
 class CurrentEventState(EventStateBase):
     class Meta:
-        ordering = ['created_at']
+        ordering = ['period_start']
         verbose_name = 'Current Event State'
         verbose_name_plural = 'Current Event States'
