@@ -347,10 +347,16 @@ class EventListUpdater:
 # need to pass the value of the 'ID' field in those query parameters and if the
 # value of the 'FI' key is passed we get "invalid parameter" error).
                     if 'ID' in obj:
-# Keep only the first 8 characters. Looks like betsapi adds some garbage after
-# that point and the garbage changes from call to call.
-                        fi = obj['ID'][:8]
-                        fis.append(fi)
+# As of 2021-11: Example value: 111226223C1A_1_9. Trial and error has shown
+# that only the digits in the beginning of the string matter. If the full value
+# is used (including the characters after the digits) the API calls still
+# return the correct data, but in this case the problem is that the final part
+# switches between 1_3, 1_9 and 1_11 which causes us to save multiple rows in
+# the database for a single event.
+                        mo = re.match(r'^\d+', obj['ID'])
+                        if mo:
+                            fi = mo.group(0)
+                            fis.append(fi)
         return fis
 
     def expire_current_states(self, fis):
